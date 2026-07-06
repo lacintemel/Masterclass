@@ -1,0 +1,43 @@
+sources:
+  - id: neo23x0_signature_base
+    name: Florian Roth / Neo23x0 signature-base
+    url: https://github.com/Neo23x0/signature-base
+    rule_paths:
+      - yara/
+    suggested_local_path: rules/external/signature-base/
+    notes:
+      - YARA signature and IOC database used by LOKI and THOR Lite.
+      - Some rules use external variables and may fail in tools that do not provide them.
+      - Review the Detection Rule License and individual rule metadata before redistribution.
+
+  - id: yara_forge
+    name: YARA-Forge rulesets
+    url: https://github.com/YARAHQ/yara-forge
+    suggested_local_path: rules/external/yara-forge/
+    notes:
+      - Aggregates and standardizes public YARA rulesets.
+      - Prefer curated/core rulesets for lower false-positive risk.
+
+  - id: elastic_security_yara
+    name: Elastic Security YARA Rules
+    url: https://github.com/elastic/protections-artifacts
+    suggested_local_path: rules/external/elastic/
+    notes:
+      - Endpoint detection artifacts from Elastic Security.
+      - Includes broad malware families and platform coverage beyond document malware.
+
+  - id: yara_rules_community
+    name: yara-rules/rules community repo
+    url: https://github.com/Yara-Rules/rules
+    suggested_local_path: rules/external/yara-rules/
+    notes:
+      - Older community collection with packer, anti-debug, capability, malware, and webshell rules.
+      - Expect some stale or noisy detections; curate before production use.
+
+  - id: inquest_awesome_yara
+    name: InQuest awesome-yara
+    url: https://github.com/InQuest/awesome-yara
+    suggested_local_path: docs/reference/awesome-yara
+    notes:
+      - Curated guide to YARA rules, tools, and people, not a ruleset itself.
+      - Use it as a discovery index for additional rule sources.

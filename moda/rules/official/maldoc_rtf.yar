@@ -193,3 +193,55 @@ rule rtf_obfuscated
             (#hex_escape > 5 and #long_hex > 0)
         )
 }
+
+rule SUSP_INDICATOR_RTF_MalVer_Objects
+{
+    meta:
+        author      = "MODA"
+        description = "Detects suspicious RTF malformed or weaponized object records with OLE, Package, Equation, or encoded payload indicators"
+        date        = "2026-07-06"
+        severity    = "high"
+        reference   = "https://attack.mitre.org/techniques/T1203/"
+
+    strings:
+        $rtf_magic = "{\\rtf" ascii
+
+        $object    = "\\object" ascii nocase
+        $objdata   = "\\objdata" ascii nocase
+        $objclass  = "\\objclass" ascii nocase
+        $objemb    = "\\objemb" ascii nocase
+        $objlink   = "\\objlink" ascii nocase
+        $objupdate = "\\objupdate" ascii nocase
+
+        $equation_ascii = "Equation.3" ascii nocase
+        $equation_hex   = "4571756174696f6e2e33" ascii nocase
+        $eq_clsid       = "0002CE02" ascii nocase
+        $eq_clsid_le    = "02ce0200" ascii nocase
+
+        $package_ascii = "Package" ascii nocase
+        $package_hex   = "5061636b616765" ascii nocase
+        $pkg_clsid     = "0003000C" ascii nocase
+        $pkg_clsid_le  = "0c000300" ascii nocase
+
+        $ole_hex = "d0cf11e0a1b11ae1" ascii nocase
+        $mz_hex  = "4d5a" ascii nocase
+        $pe_hex  = "50450000" ascii nocase
+
+        $large_hex = /[0-9a-fA-F]{800,}/ ascii
+        $bin_data  = /\\bin\s*[0-9]{4,}/ ascii
+
+    condition:
+        $rtf_magic at 0 and
+        $object and
+        $objdata and
+        (
+            any of ($objclass, $objemb, $objlink, $objupdate) or
+            any of ($equation_*) or
+            any of ($eq_clsid*) or
+            any of ($package_*) or
+            any of ($pkg_clsid*) or
+            any of ($ole_hex, $mz_hex, $pe_hex) or
+            $large_hex or
+            $bin_data
+        )
+}

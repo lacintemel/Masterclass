@@ -189,3 +189,74 @@ rule ooxml_dde_attack
             ($quote_field and any of ($dde_field*))
         )
 }
+
+rule ooxml_office_exploit_protocols
+{
+    meta:
+        author      = "MODA"
+        description = "Detects OOXML relationships or XML parts referencing Office exploit protocol handlers"
+        date        = "2026-07-06"
+        severity    = "critical"
+        reference   = "https://attack.mitre.org/techniques/T1203/"
+
+    strings:
+        $pk_magic = { 50 4B 03 04 }
+
+        $rels_ext    = ".rels" ascii
+        $external    = "TargetMode=\"External\"" ascii nocase
+        $external_s  = "TargetMode='External'" ascii nocase
+        $ole_rel     = "oleObject" ascii nocase
+        $template    = "attachedTemplate" ascii nocase
+
+        $msdt        = "ms-msdt:" ascii nocase
+        $mhtml       = "mhtml:" ascii nocase
+        $search_ms   = "search-ms:" ascii nocase
+        $officecmd   = "ms-officecmd:" ascii nocase
+        $ms_word     = "ms-word:" ascii nocase
+        $ms_excel    = "ms-excel:" ascii nocase
+        $ms_powerpt  = "ms-powerpoint:" ascii nocase
+        $hcp         = "hcp:" ascii nocase
+        $script      = "script:" ascii nocase
+        $javascript  = "javascript:" ascii nocase
+
+        $encoded_msdt   = "ms%2dmsdt" ascii nocase
+        $encoded_mhtml  = "mhtml%3a" ascii nocase
+        $encoded_search = "search%2dms" ascii nocase
+
+    condition:
+        $pk_magic at 0 and
+        (
+            any of ($msdt, $mhtml, $search_ms, $officecmd, $ms_word, $ms_excel, $ms_powerpt, $hcp, $script, $javascript) or
+            any of ($encoded_msdt, $encoded_mhtml, $encoded_search) or
+            (($rels_ext or $external or $external_s) and ($ole_rel or $template) and any of ($msdt, $mhtml, $search_ms, $officecmd))
+        )
+}
+
+rule ooxml_mshtml_activex_exploit_markers
+{
+    meta:
+        author      = "MODA"
+        description = "Detects OOXML MSHTML, ActiveX, classid, and OLE markers associated with Office exploit chains"
+        date        = "2026-07-06"
+        severity    = "critical"
+        reference   = "https://attack.mitre.org/techniques/T1203/"
+
+    strings:
+        $pk_magic = { 50 4B 03 04 }
+
+        $mshtml1 = "mshtml" ascii nocase
+        $mshtml2 = "htmlfile" ascii nocase
+        $html    = ".html" ascii nocase
+        $mhtml   = "mhtml:" ascii nocase
+
+        $activex = "activeX" ascii nocase
+        $classid = "classid" ascii nocase
+        $clsid   = "clsid:" ascii nocase
+        $oleobj  = "oleObject" ascii nocase
+        $ole_ct  = "application/vnd.openxmlformats-officedocument.oleObject" ascii
+
+    condition:
+        $pk_magic at 0 and
+        (any of ($mshtml*) or $html or $mhtml) and
+        any of ($activex, $classid, $clsid, $oleobj, $ole_ct)
+}

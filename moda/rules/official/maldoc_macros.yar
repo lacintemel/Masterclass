@@ -360,3 +360,59 @@ rule macro_environment_access
             ($filesys_obj and any of ($delete_file, $move_file) and $environ)
         )
 }
+
+rule telebot_framework
+{
+    meta:
+        author      = "MODA"
+        description = "Detects Telegram Bot API or telebot framework indicators embedded in document macros, scripts, or payload text"
+        date        = "2026-07-06"
+        severity    = "high"
+        reference   = "https://attack.mitre.org/techniques/T1102/002/"
+
+    strings:
+        $telegram_api1 = "api.telegram.org/bot" ascii nocase
+        $telegram_api2 = "https://api.telegram.org" ascii nocase
+        $telegram_api3 = "telegram.org/bot" ascii nocase
+
+        $bot_token = /[0-9]{8,12}:[A-Za-z0-9_-]{30,}/ ascii
+
+        $telebot_py1 = "import telebot" ascii nocase
+        $telebot_py2 = "telebot.TeleBot" ascii nocase
+        $telebot_py3 = "pyTelegramBotAPI" ascii nocase
+        $telegram_bot = "telegram.Bot" ascii nocase
+
+        $method_send_message = "sendMessage" ascii nocase
+        $method_send_doc     = "sendDocument" ascii nocase
+        $method_send_photo   = "sendPhoto" ascii nocase
+        $method_get_updates  = "getUpdates" ascii nocase
+        $method_webhook      = "setWebhook" ascii nocase
+
+        $macro_http1 = "MSXML2.XMLHTTP" ascii nocase
+        $macro_http2 = "WinHttp.WinHttpRequest" ascii nocase
+        $macro_http3 = "ServerXMLHTTP" ascii nocase
+        $macro_http4 = "URLDownloadToFile" ascii nocase
+
+    condition:
+        (
+            any of ($telegram_api*) and
+            (
+                $bot_token or
+                any of ($method_*) or
+                any of ($macro_http*)
+            )
+        ) or
+        (
+            any of ($telebot_py*) and
+            (
+                $bot_token or
+                any of ($method_*) or
+                $telegram_api1
+            )
+        ) or
+        (
+            $telegram_bot and
+            any of ($method_*) and
+            $bot_token
+        )
+}
