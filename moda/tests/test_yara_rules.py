@@ -123,6 +123,37 @@ rule unit_custom_rule_for_tests
         rules = {match.rule_name for match in result.yara_matches}
         self.assertIn("unit_custom_rule_for_tests", rules)
 
+    def test_scanner_loads_external_rules_and_skips_bad_files(self) -> None:
+        external_dir = Path(__file__).resolve().parents[1] / "rules" / "external" / "unit"
+        external_dir.mkdir(parents=True, exist_ok=True)
+        good_rule = external_dir / "unit_external_good.yar"
+        bad_rule = external_dir / "unit_external_bad.yar"
+        good_rule.write_text(
+            """
+rule unit_external_rule_for_tests
+{
+    strings:
+        $marker = "UNIT_EXTERNAL_YARA_MARKER"
+    condition:
+        $marker
+}
+""".strip(),
+            encoding="utf-8",
+        )
+        bad_rule.write_text("rule unit_external_bad { strings: $a = \"x\" condition: $missing }", encoding="utf-8")
+        self.addCleanup(good_rule.unlink, missing_ok=True)
+        self.addCleanup(bad_rule.unlink, missing_ok=True)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            sample = Path(temp_dir) / "marker.bin"
+            sample.write_bytes(b"UNIT_EXTERNAL_YARA_MARKER")
+
+            result = AnalyzerEngine(skip_yara=False).analyze_file(sample)
+
+        rules = {match.rule_name for match in result.yara_matches}
+        self.assertIn("unit_external_rule_for_tests", rules)
+        self.assertIn("yara_compile_errors", result.extra)
+
 
 if __name__ == "__main__":
     unittest.main()

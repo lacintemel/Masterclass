@@ -134,9 +134,28 @@ http://127.0.0.1:8765
 
 ## YARA
 
-Official rules live in `rules/official/`. Custom rules can be placed in
-`rules/custom/`. Use `--no-yara` to skip YARA scanning when `yara-python` is not
-installed or when fast triage is preferred.
+MODA recursively loads YARA files from:
+
+- `rules/official/` for built-in MODA rules
+- `rules/custom/` for local analyst rules
+- `rules/external/` for third-party rulesets kept outside the core rules
+- `rules/community/` for curated community rules you choose to keep in-repo
+
+Use `--no-yara` to skip YARA scanning when `yara-python` is not installed or
+when fast triage is preferred.
+
+Third-party source manifest:
+
+```text
+rules/external_sources.yml
+```
+
+The manifest includes well-known public sources such as Neo23x0/signature-base,
+YARA-Forge, Elastic Security protections artifacts, Yara-Rules/rules, and
+InQuest awesome-yara. Review each source license before vendoring or
+redistributing rules. Some public rules require external variables or optional
+YARA modules; MODA skips rule files that fail compilation and records those
+compile errors in the analysis result instead of disabling all YARA scanning.
 
 ## Test
 
