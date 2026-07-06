@@ -49,10 +49,11 @@ rule ooxml_external_relationship
 
     condition:
         $pk_magic at 0 and
-        $rels_ext and
+        $rels_ext and $rel_ns and
         (
             (any of ($ext_target*) and any of ($http_target*, $https_target*, $ftp_target*)) or
             ($template_rel and any of ($ext_target*)) or
+            ($frame_rel and any of ($ext_target*)) or
             ($oleobject_rel and any of ($ext_target*)) or
             ($subDocument and any of ($ext_target*)) or
             any of ($unc_path*)
@@ -182,8 +183,8 @@ rule ooxml_dde_attack
     condition:
         $pk_magic at 0 and
         (
-            (any of ($dde_field*) and any of ($dde_cmd, $dde_powershell, $dde_mshta, $dde_wscript, $dde_cscript)) or
-            ($dde_instrText and any of ($dde_cmd, $dde_powershell, $dde_certutil, $dde_regsvr, $dde_rundll, $dde_bitsadmin)) or
+            (any of ($dde_field*) and ($dde_fldChar or $dde_instrText) and any of ($dde_cmd, $dde_powershell, $dde_mshta, $dde_wscript, $dde_cscript)) or
+            (($dde_instrText or $dde_fldChar) and any of ($dde_cmd, $dde_powershell, $dde_certutil, $dde_regsvr, $dde_rundll, $dde_bitsadmin)) or
             any of ($dde_quote*) or
             ($quote_field and any of ($dde_field*))
         )

@@ -254,6 +254,9 @@ class AnalysisResult:
         md5 = _hl.md5(ctx.file_bytes).hexdigest()
         sha1 = _hl.sha1(ctx.file_bytes).hexdigest()
 
+        extra = dict(ctx.extra)
+        extra["errors"] = list(ctx.errors)
+
         return cls(
             file_name=ctx.file_path.name,
             file_path=str(ctx.file_path),
@@ -273,7 +276,7 @@ class AnalysisResult:
             score_breakdown=dict(ctx.score_breakdown),
             recommendations=tuple(recommendations),
             analysis_duration=duration,
-            extra=dict(ctx.extra),
+            extra=extra,
         )
 
     # ------------------------------------------------------------------
