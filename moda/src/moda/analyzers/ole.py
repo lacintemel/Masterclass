@@ -48,6 +48,14 @@ class OLEAnalyzer(BaseAnalyzer):
         for stream in streams:
             stream_name = "/".join(stream)
             lowered = stream_name.lower()
+            if "encryptedpackage" in lowered or "encryptioninfo" in lowered:
+                self._add_finding(
+                    context,
+                    "Encrypted Office Package",
+                    "OLE container includes encrypted Office package streams; static content inspection may be limited.",
+                    FindingSeverity.MEDIUM,
+                    {"stream": stream_name},
+                )
             if "objectpool" in lowered:
                 self._add_finding(
                     context,
@@ -62,6 +70,14 @@ class OLEAnalyzer(BaseAnalyzer):
                     "OLE Embedded Package Stream",
                     "Contains stream names associated with embedded packages or OLE objects.",
                     FindingSeverity.MEDIUM,
+                    {"stream": stream_name},
+                )
+            if any(marker in lowered for marker in ("equation", "eqnedt32", "dde")):
+                self._add_finding(
+                    context,
+                    "OLE Exploit-Or-DDE Hint",
+                    "Stream names reference Equation Editor or DDE-related behavior abused by malicious documents.",
+                    FindingSeverity.HIGH,
                     {"stream": stream_name},
                 )
             if any(marker in lowered for marker in ("vba", "macros")):

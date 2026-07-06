@@ -100,6 +100,15 @@ class RiskScorer(BaseAnalyzer):
             self._add_component_points(components, "yara", yara_points_per_match, match.rule_name)
 
         raw_score = finding_score + yara_score
+        if context.extra.get("unsupported_file_type") and raw_score < 26:
+            adjustment = 26 - raw_score
+            raw_score += adjustment
+            self._add_component_points(
+                components,
+                "other",
+                adjustment,
+                "Unsupported analysis scope",
+            )
         score = min(raw_score, self.max_score)
         self._normalize_components(components, score)
 
@@ -188,6 +197,11 @@ class RiskScorer(BaseAnalyzer):
         return "other"
 
     def _risk_summary(self, risk_level: RiskLevel, score: int) -> str:
+        if risk_level is RiskLevel.MEDIUM and score == 26:
+            return (
+                "The file type is outside MODA's supported document scope, so this result is "
+                f"inconclusive rather than clean. Score: {score}/{self.max_score}."
+            )
         summaries = {
             RiskLevel.LOW: "No high-risk static indicators were found by the configured checks.",
             RiskLevel.MEDIUM: "The file contains suspicious traits and should be reviewed before use.",
@@ -198,6 +212,10 @@ class RiskScorer(BaseAnalyzer):
 
     def _potential_impacts(self, context: AnalysisContext) -> list[str]:
         impacts: list[str] = []
+        if context.extra.get("unsupported_file_type"):
+            impacts.append(
+                "MODA could not perform document-specific analysis because the file is not a supported Office, RTF, or PDF document."
+            )
         titles = " ".join(finding.title.lower() for finding in context.findings)
         text = context.get_all_text().lower()
         combined = f"{titles} {text}"
@@ -214,6 +232,12 @@ class RiskScorer(BaseAnalyzer):
         return impacts
 
     def _recovery_steps(self, context: AnalysisContext, risk_level: RiskLevel) -> list[str]:
+        if context.extra.get("unsupported_file_type"):
+            return [
+                "Do not treat this as a clean result; analyze the sample with tooling for its real file type.",
+                "If the file came from MalwareBazaar or another malware source, keep it inside an isolated VM or sandbox.",
+                "Use PE, archive, script, or sandbox analysis tools as appropriate, and keep the sample quarantined.",
+            ]
         if risk_level in {RiskLevel.HIGH, RiskLevel.CRITICAL} or any(
             finding.severity >= FindingSeverity.HIGH for finding in context.findings
         ):

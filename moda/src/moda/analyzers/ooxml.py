@@ -29,6 +29,7 @@ class OOXMLAnalyzer(BaseAnalyzer):
             with zipfile.ZipFile(io.BytesIO(context.file_bytes)) as z:
                 files = z.namelist()
                 lowered_files = {name.lower(): name for name in files}
+                context.extra["ooxml_package"] = self._package_profile(files)
                 vba_projects = [
                     original
                     for lowered, original in lowered_files.items()
@@ -58,14 +59,27 @@ class OOXMLAnalyzer(BaseAnalyzer):
                     self._add_finding(context, "Embedded Objects", f"Found {len(embeddings)} embedded objects", FindingSeverity.MEDIUM, {"files": embeddings})
 
                 self._inspect_xml_parts(context, z)
+                self._inspect_excel_parts(context, z)
         except Exception as e:
             context.errors.append(f"OOXML parsing error: {e}")
+
+    def _package_profile(self, files: list[str]) -> dict[str, object]:
+        lowered = [name.lower() for name in files]
+        return {
+            "part_count": len(files),
+            "has_macros": any(name.endswith("vbaproject.bin") for name in lowered),
+            "embedded_count": sum(1 for name in lowered if "/embeddings/" in name),
+            "activex_count": sum(1 for name in lowered if "/activex/" in name),
+            "external_link_parts": sum(1 for name in lowered if "externallinks/" in name),
+            "connection_parts": sum(1 for name in lowered if "connections" in name or "querytables/" in name),
+        }
 
     def _inspect_xml_parts(self, context: AnalysisContext, archive: zipfile.ZipFile) -> None:
         dde_hits: list[str] = []
         ole_hits: list[str] = []
         active_content: list[str] = []
         suspicious_text: list[str] = []
+        update_fields: list[str] = []
 
         for name in archive.namelist():
             lowered_name = name.lower()
@@ -85,6 +99,8 @@ class OOXMLAnalyzer(BaseAnalyzer):
                 active_content.append(name)
             if self._contains_suspicious_command_text(lowered):
                 suspicious_text.append(name)
+            if "updatefields" in lowered and 'val="true"' in lowered:
+                update_fields.append(name)
 
         if dde_hits:
             self._add_finding(
@@ -118,6 +134,73 @@ class OOXMLAnalyzer(BaseAnalyzer):
                 severity=FindingSeverity.MEDIUM,
                 details={"parts": sorted(set(suspicious_text))[:20]},
             )
+        if update_fields:
+            self._add_finding(
+                context,
+                title="OOXML Auto Field Update",
+                description="Document settings request field updates, which can combine with links or DDE fields.",
+                severity=FindingSeverity.MEDIUM,
+                details={"parts": sorted(set(update_fields))[:20]},
+            )
+
+    def _inspect_excel_parts(self, context: AnalysisContext, archive: zipfile.ZipFile) -> None:
+        external_link_parts: list[str] = []
+        connection_parts: list[str] = []
+        suspicious_formulas: list[str] = []
+        very_hidden_sheets: list[str] = []
+
+        for name in archive.namelist():
+            lowered_name = name.lower()
+            if not lowered_name.startswith("xl/"):
+                continue
+            if "externallinks/" in lowered_name:
+                external_link_parts.append(name)
+            if "connections" in lowered_name or "querytables/" in lowered_name:
+                connection_parts.append(name)
+            if not lowered_name.endswith((".xml", ".rels")):
+                continue
+            try:
+                text = archive.read(name).decode("utf-8", errors="ignore")
+            except Exception:
+                continue
+            lowered = text.lower()
+            if self._contains_suspicious_formula(lowered):
+                suspicious_formulas.append(name)
+            if 'state="veryhidden"' in lowered:
+                very_hidden_sheets.append(name)
+
+        if external_link_parts:
+            self._add_finding(
+                context,
+                title="Excel External Links",
+                description="Workbook contains external link parts that can reference remote or local content.",
+                severity=FindingSeverity.MEDIUM,
+                details={"parts": sorted(set(external_link_parts))[:25]},
+            )
+        if connection_parts:
+            self._add_finding(
+                context,
+                title="Excel Data Connections",
+                description="Workbook contains connection or query table parts that can retrieve external data.",
+                severity=FindingSeverity.MEDIUM,
+                details={"parts": sorted(set(connection_parts))[:25]},
+            )
+        if suspicious_formulas:
+            self._add_finding(
+                context,
+                title="Suspicious Excel Formula",
+                description="Workbook formulas reference functions or command-like patterns abused in malicious spreadsheets.",
+                severity=FindingSeverity.HIGH,
+                details={"parts": sorted(set(suspicious_formulas))[:25]},
+            )
+        if very_hidden_sheets:
+            self._add_finding(
+                context,
+                title="Excel Very Hidden Sheet",
+                description="Workbook contains veryHidden sheets, often used to conceal staging data or formulas.",
+                severity=FindingSeverity.LOW,
+                details={"parts": sorted(set(very_hidden_sheets))[:25]},
+            )
 
     def _contains_suspicious_command_text(self, lowered: str) -> bool:
         return bool(
@@ -126,3 +209,17 @@ class OOXMLAnalyzer(BaseAnalyzer):
                 lowered,
             )
         )
+
+    def _contains_suspicious_formula(self, lowered: str) -> bool:
+        formula_markers = (
+            "hyperlink(",
+            "webservice(",
+            "filterxml(",
+            "cmd|",
+            "powershell",
+            "mshta",
+            "dde",
+            "rundll32",
+            "regsvr32",
+        )
+        return any(marker in lowered for marker in formula_markers)

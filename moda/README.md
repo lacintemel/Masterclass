@@ -8,9 +8,16 @@ rendering the submitted document.
 ## What MODA Analyzes
 
 - Office binary documents: `.doc`, `.xls`, `.ppt`
-- Office Open XML documents: `.docx`, `.docm`, `.xlsx`, `.xlsm`, `.pptx`, `.pptm`
+- Office binary templates/add-ins where they use the same OLE structure:
+  `.dot`, `.xla`, `.xlt`, `.pps`, `.pot`, `.ppa`
+- Office Open XML documents: `.docx`, `.docm`, `.dotx`, `.dotm`, `.xlsx`,
+  `.xlsm`, `.xlsb`, `.xltx`, `.xltm`, `.xlam`, `.pptx`, `.pptm`, `.ppsx`,
+  `.ppsm`, `.potx`, `.potm`, `.ppam`
 - Rich Text Format: `.rtf`
 - PDFs: `.pdf`
+
+Unsupported file types are reported as inconclusive instead of clean. MODA is
+focused on document triage, not general PE/ELF malware classification.
 
 ## Safety Model
 
@@ -20,10 +27,17 @@ extraction, relationship inspection, rule matching, and configurable scoring.
 
 ## Features
 
-- File type detection with magic-byte validation
+- File type detection with magic-byte and OOXML package validation
 - MD5, SHA1, and SHA256 hash generation
 - Metadata extraction for OOXML, OLE, and PDF where supported
-- OOXML structure inspection, macro project detection, embedded object discovery
+- OOXML structure inspection, package profiling, macro project detection, DDE
+  fields, active content markers, suspicious command text, and embedded object
+  discovery
+- Excel-specific checks for external links, data connections, query tables,
+  suspicious formulas, and veryHidden sheets
+- OLE stream analysis for macro storage, ObjectPool, embedded packages, ActiveX,
+  encrypted Office packages, Equation/DDE hints, high-entropy VBA streams, and
+  large directory trees
 - PDF action and JavaScript keyword detection
 - RTF object, DDE, and exploit-marker detection
 - Static macro heuristics for auto-run triggers, shell execution, downloaders,
