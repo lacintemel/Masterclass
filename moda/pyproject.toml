@@ -51,6 +51,9 @@ moda = "moda.cli:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+"moda.ui" = ["static/*.html", "static/*.css", "static/*.js"]
+
 [tool.ruff]
 target-version = "py310"
 line-length = 100
