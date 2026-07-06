@@ -58,7 +58,7 @@ class MetadataAnalyzer(BaseAnalyzer):
                     metadata['LastSavedTime'] = str(meta.last_saved_time) if meta.last_saved_time else None
                     metadata['CreatingApplication'] = meta.creating_application.decode('utf-8', errors='ignore') if meta.creating_application else None
         except Exception as e:
-            self.logger.warning(f"Error parsing OLE metadata: {e}")
+            self.logger.debug(f"Error parsing OLE metadata: {e}")
         return metadata
 
     def _extract_ooxml_metadata(self, context: AnalysisContext) -> dict:
@@ -80,7 +80,7 @@ class MetadataAnalyzer(BaseAnalyzer):
                     metadata['LastSavedBy'] = last_mod_by.text if last_mod_by is not None else None
                     metadata['CreateTime'] = created.text if created is not None else None
         except Exception as e:
-            self.logger.warning(f"Error parsing OOXML metadata: {e}")
+            self.logger.debug(f"Error parsing OOXML metadata: {e}")
         return metadata
 
     def _extract_pdf_metadata(self, context: AnalysisContext) -> dict:
@@ -97,7 +97,7 @@ class MetadataAnalyzer(BaseAnalyzer):
                 metadata['Producer'] = meta.producer
                 metadata['CreationDate'] = meta.creation_date
         except Exception as e:
-            self.logger.warning(f"Error parsing PDF metadata: {e}")
+            self.logger.debug(f"Error parsing PDF metadata: {e}")
         return metadata
 
     def _flag_suspicious_metadata(self, context: AnalysisContext, metadata: dict) -> None:

@@ -1,12 +1,33 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
+import json
 import sys
 import logging
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from .core.engine import AnalyzerEngine
 from .core.exceptions import MODAError
+
+if TYPE_CHECKING:
+    from .core.models import AnalysisResult
+    from .reporting.base import BaseReporter
+
+SUPPORTED_EXTENSIONS = {
+    ".doc",
+    ".xls",
+    ".ppt",
+    ".docx",
+    ".docm",
+    ".xlsx",
+    ".xlsm",
+    ".pptx",
+    ".pptm",
+    ".rtf",
+    ".pdf",
+}
 
 
 def run_ui_command(argv: list[str]) -> None:
@@ -28,20 +49,177 @@ def run_ui_command(argv: list[str]) -> None:
         verbose=args.verbose,
     )
 
+
+def run_batch_command(argv: list[str]) -> None:
+    parser = argparse.ArgumentParser(description="Analyze a directory of documents")
+    parser.add_argument("path", help="Directory or file to analyze")
+    parser.add_argument("-o", "--output", default="moda_batch_results.jsonl", help="JSONL output path")
+    parser.add_argument("--recursive", action="store_true", help="Recurse into subdirectories")
+    parser.add_argument("--no-yara", action="store_true", help="Skip YARA scanning")
+    parser.add_argument("--max-size", type=int, default=100, help="Maximum file size in MB")
+    parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose logging")
+    args = parser.parse_args(argv)
+    setup_logging(args.verbose)
+
+    target = Path(args.path)
+    files = discover_input_files(target, recursive=args.recursive)
+    engine = AnalyzerEngine(skip_yara=args.no_yara, max_file_size_mb=args.max_size)
+
+    output_path = Path(args.output)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    summary = {"total": len(files), "analyzed": 0, "errors": 0, "high_or_critical": 0}
+
+    with output_path.open("w", encoding="utf-8") as handle:
+        for file_path in files:
+            try:
+                result = engine.analyze_file(file_path)
+                payload = result.to_dict()
+                summary["analyzed"] += 1
+                if result.risk_level in {"high", "critical"}:
+                    summary["high_or_critical"] += 1
+            except Exception as exc:
+                payload = {
+                    "file_info": {"file_path": str(file_path), "file_name": file_path.name},
+                    "error": str(exc),
+                }
+                summary["errors"] += 1
+            handle.write(json.dumps(payload, default=str, sort_keys=True) + "\n")
+
+    print(
+        "Batch complete: "
+        f"{summary['analyzed']}/{summary['total']} analyzed, "
+        f"{summary['high_or_critical']} high/critical, "
+        f"{summary['errors']} errors"
+    )
+    print(f"Results saved to {output_path}")
+
+
+def run_doctor_command(argv: list[str]) -> None:
+    parser = argparse.ArgumentParser(description="Check MODA runtime readiness")
+    parser.parse_args(argv)
+
+    from .utils.config_loader import get_config_dir, get_rules_dir
+
+    checks = [
+        ("Python >= 3.10", sys.version_info >= (3, 10), sys.version.split()[0]),
+        ("Config directory", get_config_dir().exists(), str(get_config_dir())),
+        ("Rules directory", get_rules_dir().exists(), str(get_rules_dir())),
+        ("UI assets", (Path(__file__).parent / "ui" / "static" / "index.html").exists(), "static UI"),
+    ]
+    optional_modules = {
+        "python-magic": "magic",
+        "olefile": "olefile",
+        "oletools": "oletools",
+        "yara-python": "yara",
+        "pypdf": "pypdf",
+        "rich": "rich",
+        "pyyaml": "yaml",
+    }
+    for label, module_name in optional_modules.items():
+        checks.append((label, importlib.util.find_spec(module_name) is not None, module_name))
+
+    failed_required = False
+    for label, ok, detail in checks:
+        status = "OK" if ok else "MISSING"
+        print(f"{status:8} {label} ({detail})")
+        if label in {"Python >= 3.10", "Config directory", "Rules directory", "UI assets"} and not ok:
+            failed_required = True
+
+    if failed_required:
+        raise SystemExit(1)
+
+
+def discover_input_files(path: Path, *, recursive: bool = False) -> list[Path]:
+    """Find supported document files for batch analysis."""
+    if path.is_file():
+        return [path] if path.suffix.lower() in SUPPORTED_EXTENSIONS else []
+    if not path.exists():
+        raise FileNotFoundError(f"Path not found: {path}")
+    if not path.is_dir():
+        raise FileNotFoundError(f"Not a file or directory: {path}")
+
+    iterator = path.rglob("*") if recursive else path.glob("*")
+    return sorted(
+        file_path
+        for file_path in iterator
+        if file_path.is_file() and file_path.suffix.lower() in SUPPORTED_EXTENSIONS
+    )
+
+
 def setup_logging(verbose: bool) -> None:
     """Setup basic logging for CLI."""
-    level = logging.DEBUG if verbose else logging.INFO
+    level = logging.DEBUG if verbose else logging.WARNING
     logging.basicConfig(
         level=level,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
 
+
+def build_reporter(format_name: str, *, use_color: bool = True) -> "BaseReporter":
+    """Create a reporter for a CLI format name."""
+    if format_name == "console":
+        from .reporting.console import ConsoleReporter
+
+        return ConsoleReporter(use_color=use_color)
+    if format_name == "json":
+        from .reporting.json_report import JSONReporter
+
+        return JSONReporter()
+    if format_name == "html":
+        from .reporting.html_report import HTMLReporter
+
+        return HTMLReporter()
+    if format_name == "pdf":
+        from .reporting.pdf_report import PDFReporter
+
+        return PDFReporter()
+    raise ValueError(f"Unsupported report format: {format_name}")
+
+
+def emit_report(
+    result: "AnalysisResult",
+    reporter: "BaseReporter",
+    *,
+    output: str | None,
+    force_file: bool = False,
+) -> None:
+    """Print or save a generated report."""
+    if output:
+        reporter.save(result, output)
+        print(f"Report saved to {output}")
+        return
+
+    if force_file:
+        output_path = reporter.get_default_filename(result)
+        reporter.save(result, output_path)
+        print(f"Report saved to {output_path}")
+        return
+
+    payload = reporter.generate(result)
+    if isinstance(payload, bytes):
+        sys.stdout.buffer.write(payload)
+    elif payload:
+        print(payload)
+
+
 def main() -> None:
     if len(sys.argv) > 1 and sys.argv[1] == "ui":
         run_ui_command(sys.argv[2:])
         return
+    if len(sys.argv) > 1 and sys.argv[1] == "batch":
+        run_batch_command(sys.argv[2:])
+        return
+    if len(sys.argv) > 1 and sys.argv[1] == "doctor":
+        run_doctor_command(sys.argv[2:])
+        return
 
-    parser = argparse.ArgumentParser(description="Malicious Office Document Analyzer (MODA)")
+    parser = argparse.ArgumentParser(
+        description="Malicious Office Document Analyzer (MODA)",
+        epilog=(
+            "Commands: moda ui | moda batch <path> | moda doctor. "
+            "Use '<command> --help' for command-specific options."
+        ),
+    )
     parser.add_argument("file", help="Path to the document to analyze")
     parser.add_argument("-f", "--format", choices=["console", "json", "html", "pdf"], default="console", help="Report format")
     parser.add_argument("-o", "--output", help="Output file path for report")
@@ -59,23 +237,13 @@ def main() -> None:
         engine = AnalyzerEngine(skip_yara=args.no_yara, max_file_size_mb=args.max_size)
         result = engine.analyze_file(args.file)
         
-        # Dispatch to appropriate reporter
-        if args.format == "console":
-            from .reporting.console import ConsoleReporter
-            reporter = ConsoleReporter(use_color=not args.no_color)
-            if args.output:
-                reporter.save(result, args.output)
-            else:
-                reporter.generate(result)
-        elif args.format == "json":
-            from .reporting.json_report import JSONReporter
-            reporter = JSONReporter()
-            if args.output:
-                reporter.save(result, args.output)
-            else:
-                print(reporter.generate(result))
-        else:
-            print(f"Format {args.format} not fully implemented yet.", file=sys.stderr)
+        reporter = build_reporter(args.format, use_color=not args.no_color)
+        emit_report(
+            result,
+            reporter,
+            output=args.output,
+            force_file=args.format in {"html", "pdf"} and args.output is None,
+        )
             
         if args.format == "console":
             print("Analysis completed successfully.")
