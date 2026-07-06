@@ -7,8 +7,26 @@ from pathlib import Path
 
 from .core.engine import AnalyzerEngine
 from .core.exceptions import MODAError
-# Reporters and Analyzers would be imported here in a full implementation
-# We will stub the CLI functionality for the pipeline build
+
+
+def run_ui_command(argv: list[str]) -> None:
+    parser = argparse.ArgumentParser(description="Start the MODA local web UI")
+    parser.add_argument("--host", default="127.0.0.1", help="Host interface to bind")
+    parser.add_argument("--port", type=int, default=8765, help="Port to listen on")
+    parser.add_argument("--no-yara", action="store_true", help="Skip YARA scanning")
+    parser.add_argument("--max-size", type=int, default=100, help="Maximum file size in MB")
+    parser.add_argument("-v", "--verbose", action="store_true", help="Enable request logging")
+    args = parser.parse_args(argv)
+
+    from .ui.server import run_ui
+
+    run_ui(
+        host=args.host,
+        port=args.port,
+        skip_yara=args.no_yara,
+        max_size_mb=args.max_size,
+        verbose=args.verbose,
+    )
 
 def setup_logging(verbose: bool) -> None:
     """Setup basic logging for CLI."""
@@ -19,6 +37,10 @@ def setup_logging(verbose: bool) -> None:
     )
 
 def main() -> None:
+    if len(sys.argv) > 1 and sys.argv[1] == "ui":
+        run_ui_command(sys.argv[2:])
+        return
+
     parser = argparse.ArgumentParser(description="Malicious Office Document Analyzer (MODA)")
     parser.add_argument("file", help="Path to the document to analyze")
     parser.add_argument("-f", "--format", choices=["console", "json", "html", "pdf"], default="console", help="Report format")
