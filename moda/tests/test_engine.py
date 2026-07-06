@@ -71,6 +71,17 @@ class AnalyzerEngineTests(unittest.TestCase):
         self.assertGreater(result.risk_score, 0)
         self.assertEqual(result.findings[0].title, "VBA Macros Present")
 
+    def test_context_errors_are_in_result_dict(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            sample = Path(temp_dir) / "benign.docx"
+            build_docx(sample)
+
+            result = AnalyzerEngine(skip_yara=True).analyze_file(sample)
+            payload = result.to_dict()
+
+        self.assertIn("errors", payload)
+        self.assertEqual(payload["errors"], [])
+
 
 if __name__ == "__main__":
     unittest.main()

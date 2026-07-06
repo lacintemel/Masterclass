@@ -56,7 +56,7 @@ rule pdf_with_javascript
             ($js_type and ($js_eval or $js_unescape or $js_fromchar)) or
             ($js_action and any of ($js_eval, $js_unescape, $heap_spray*, $shellcode, $nop_sled)) or
             ($js_type and $js_concat and $js_charcode) or
-            ($js_type and any of ($util_printf, $collab)) or
+            (($js_type or $js_embed) and any of ($util_printf, $app_doc, $collab)) or
             ($js_action and $js_this and ($js_replace or $js_split) and $js_unescape)
         )
 }
@@ -103,7 +103,7 @@ rule pdf_launch_action
     condition:
         $pdf_magic at 0 and
         (
-            ($launch and $win_launch and ($f_param or $p_param)) or
+            ($launch and ($action or $s_type) and $win_launch and ($f_param or $p_param or $d_param)) or
             ($launch and any of ($cmd_exe, $cmd_path, $powershell, $wscript, $cscript, $mshta, $rundll32)) or
             ($goto_remote and $f_param) or
             ($goto_embed and $f_param) or
@@ -156,7 +156,7 @@ rule pdf_embedded_file
         (
             ($embed_file and $mz_header) or
             ($embed_file and any of ($name_exe, $name_dll, $name_scr, $name_bat, $name_cmd, $name_vbs, $name_js, $name_ps1, $name_hta, $name_jar)) or
-            ($filespec and $ef and $mz_header) or
+            ($filespec and ($ef or $uf) and $mz_header) or
             ($embed_file and 3 of ($flate, $asciihex, $ascii85, $lzw))
         )
 }
@@ -202,7 +202,7 @@ rule pdf_suspicious_objects
         $pdf_magic at 0 and
         (
             ($acroform and $xfa and ($open_action or $aa)) or
-            ($obj_stream and ($open_action or $aa)) or
+            (($obj_stream or $xref_stream) and ($open_action or $aa)) or
             ($jbig2 and ($open_action or $aa)) or
             ($richmedia and ($flash or $type3d)) or
             (2 of ($colors_large, $width_large, $height_large)) or
