@@ -1,0 +1,378 @@
+# MODA Indicator Definitions
+# Comprehensive patterns used by analyzers to detect suspicious content.
+
+# Suspicious keywords commonly found in malicious VBA macros and scripts.
+suspicious_keywords:
+  high_severity:
+    - "Shell"
+    - "WScript.Shell"
+    - "PowerShell"
+    - "cmd.exe"
+    - "CreateObject"
+    - "GetObject"
+    - "CallByName"
+    - "Environ"
+    - "URLDownloadToFile"
+    - "XMLHTTP"
+    - "ADODB.Stream"
+    - "Msxml2.XMLHTTP"
+    - "WinHttp.WinHttpRequest"
+    - "ShellExecute"
+    - "RegWrite"
+    - "RegRead"
+    - "RegDelete"
+    - "Kill"
+    - "FileCopy"
+    - "CopyFile"
+    - "MoveFile"
+    - "DeleteFile"
+    - "SaveToFile"
+    - "BinaryWrite"
+
+  medium_severity:
+    - "Open"
+    - "Write"
+    - "Put"
+    - "Print #"
+    - "Input #"
+    - "Binary"
+    - "Access Read"
+    - "Access Write"
+    - "Get"
+    - "LOF"
+    - "EOF"
+    - "Seek"
+    - "FreeFile"
+    - "FileLen"
+    - "Dir"
+    - "MkDir"
+    - "ChDir"
+    - "CurDir"
+    - "Name"
+    - "SetAttr"
+
+  low_severity:
+    - "MsgBox"
+    - "InputBox"
+    - "Application.Run"
+    - "Application.OnTime"
+    - "ActiveWorkbook"
+    - "ThisDocument"
+    - "ThisWorkbook"
+    - "Selection"
+    - "ActiveSheet"
+
+# Metadata field patterns that may indicate malicious intent.
+metadata_patterns:
+  suspicious_authors:
+    - "admin"
+    - "user"
+    - "test"
+    - "temp"
+    - "default"
+    - "owner"
+    - "pc"
+    - "1"
+    - "malware"
+    - "hacker"
+    - ""
+
+  suspicious_template_sources:
+    - "http://"
+    - "https://"
+    - "ftp://"
+    - "\\\\."
+    - "Normal.dotm"
+
+  suspicious_last_saved_by:
+    - "admin"
+    - "user"
+    - "test"
+
+# VBA auto-execution triggers that run without user interaction.
+auto_exec_triggers:
+  - "AutoOpen"
+  - "AutoClose"
+  - "AutoExec"
+  - "AutoExit"
+  - "AutoNew"
+  - "Auto_Open"
+  - "Auto_Close"
+  - "Document_Open"
+  - "Document_Close"
+  - "Document_BeforeClose"
+  - "Document_Change"
+  - "Document_New"
+  - "Workbook_Open"
+  - "Workbook_Close"
+  - "Workbook_Activate"
+  - "Workbook_Deactivate"
+  - "Workbook_BeforeClose"
+  - "Workbook_BeforeSave"
+  - "Workbook_AfterSave"
+  - "Workbook_SheetActivate"
+  - "Worksheet_Activate"
+  - "Worksheet_Change"
+  - "Worksheet_SelectionChange"
+  - "Worksheet_BeforeDoubleClick"
+  - "Worksheet_Calculate"
+  - "UserForm_Initialize"
+  - "UserForm_Activate"
+  - "UserForm_Click"
+  - "InkPicture1_Painted"
+  - "Painting1_Painted"
+
+# Suspicious function calls in macros/scripts.
+suspicious_functions:
+  shell_execution:
+    - "Shell"
+    - "ShellExecute"
+    - "ShellExecuteA"
+    - "ShellExecuteW"
+    - "WinExec"
+    - "CreateProcessA"
+    - "CreateProcessW"
+    - "system"
+    - "popen"
+    - "exec"
+
+  download_functions:
+    - "URLDownloadToFile"
+    - "URLDownloadToFileA"
+    - "URLDownloadToFileW"
+    - "URLDownloadToCacheFile"
+    - "HttpSendRequest"
+    - "InternetOpenUrl"
+    - "InternetOpen"
+    - "InternetReadFile"
+
+  file_manipulation:
+    - "CreateFile"
+    - "CreateFileA"
+    - "CreateFileW"
+    - "WriteFile"
+    - "ReadFile"
+    - "DeleteFileA"
+    - "DeleteFileW"
+    - "CopyFileA"
+    - "CopyFileW"
+    - "MoveFileA"
+    - "MoveFileW"
+
+  memory_manipulation:
+    - "VirtualAlloc"
+    - "VirtualAllocEx"
+    - "VirtualProtect"
+    - "WriteProcessMemory"
+    - "ReadProcessMemory"
+    - "NtWriteVirtualMemory"
+    - "CreateRemoteThread"
+    - "RtlMoveMemory"
+    - "HeapCreate"
+
+  registry_manipulation:
+    - "RegOpenKey"
+    - "RegOpenKeyEx"
+    - "RegSetValueEx"
+    - "RegCreateKey"
+    - "RegCreateKeyEx"
+    - "RegDeleteKey"
+    - "RegDeleteValue"
+    - "RegQueryValueEx"
+    - "RegEnumKey"
+
+  crypto_functions:
+    - "CryptAcquireContext"
+    - "CryptEncrypt"
+    - "CryptDecrypt"
+    - "CryptCreateHash"
+    - "CryptHashData"
+    - "CryptDeriveKey"
+    - "CryptGenRandom"
+
+  dll_injection:
+    - "LoadLibrary"
+    - "LoadLibraryA"
+    - "LoadLibraryW"
+    - "LoadLibraryEx"
+    - "GetProcAddress"
+    - "FreeLibrary"
+    - "LdrLoadDll"
+
+# Obfuscation patterns that may indicate deliberate code concealment.
+obfuscation_patterns:
+  string_concatenation:
+    description: "Excessive string concatenation to hide keywords"
+    pattern: '(?:Chr\(\d+\)\s*[&+]\s*){3,}'
+    severity: "high"
+
+  char_code_construction:
+    description: "Building strings character by character using Chr/ChrW"
+    pattern: 'Chr[Ww]?\(\d+\)'
+    severity: "medium"
+
+  base64_encoded_blocks:
+    description: "Large blocks of base64-encoded data"
+    pattern: '[A-Za-z0-9+/]{50,}={0,2}'
+    severity: "high"
+
+  hex_encoded_blocks:
+    description: "Long sequences of hex-encoded data"
+    pattern: '(?:[0-9A-Fa-f]{2}){20,}'
+    severity: "medium"
+
+  replace_deobfuscation:
+    description: "Use of Replace function to deobfuscate strings"
+    pattern: 'Replace\(.+?,\s*".+?",\s*".+?"\)'
+    severity: "medium"
+
+  split_join_obfuscation:
+    description: "Use of Split/Join to reconstruct hidden strings"
+    pattern: 'Join\(Split\('
+    severity: "medium"
+
+  execute_from_string:
+    description: "Dynamic code execution from constructed strings"
+    pattern: '(?:Eval|Execute|ExecuteGlobal|Run)\s*\('
+    severity: "critical"
+
+  environment_variable_abuse:
+    description: "Using environment variables to hide values"
+    pattern: 'Environ\(\s*["\'].+?["\']\s*\)'
+    severity: "medium"
+
+  wmi_execution:
+    description: "WMI-based code execution"
+    pattern: 'GetObject\(\s*["\']winmgmts:'
+    severity: "high"
+
+  scheduled_task_creation:
+    description: "Creating scheduled tasks for persistence"
+    pattern: 'schtasks\s*/create'
+    severity: "critical"
+
+# Suspicious COM CLSIDs that may indicate malicious embedded objects.
+suspicious_clsids:
+  - clsid: "00020906-0000-0000-C000-000000000046"
+    name: "Microsoft Word Document"
+    risk: "low"
+
+  - clsid: "00020900-0000-0000-C000-000000000046"
+    name: "Microsoft Word 6.0-7.0 Document"
+    risk: "medium"
+
+  - clsid: "F4754C9B-64F5-4B40-8AF4-679732AC0607"
+    name: "Word.Document.12 (CVE-2017-0199)"
+    risk: "critical"
+
+  - clsid: "00020832-0000-0000-C000-000000000046"
+    name: "Microsoft Excel Worksheet"
+    risk: "low"
+
+  - clsid: "00020830-0000-0000-C000-000000000046"
+    name: "Microsoft Excel Chart"
+    risk: "medium"
+
+  - clsid: "D27CDB6E-AE6D-11CF-96B8-444553540000"
+    name: "Adobe Flash (SWF)"
+    risk: "critical"
+
+  - clsid: "0002CE02-0000-0000-C000-000000000046"
+    name: "Microsoft Equation 3.0 (CVE-2017-11882)"
+    risk: "critical"
+
+  - clsid: "00024500-0000-0000-C000-000000000046"
+    name: "Microsoft Excel Application"
+    risk: "medium"
+
+  - clsid: "0003000C-0000-0000-C000-000000000046"
+    name: "OLE Package Object"
+    risk: "high"
+
+  - clsid: "0003000E-0000-0000-C000-000000000046"
+    name: "OLE Package Object (alternate)"
+    risk: "high"
+
+  - clsid: "00000300-0000-0000-C000-000000000046"
+    name: "StdOleLink"
+    risk: "high"
+
+  - clsid: "3050F4D8-98B5-11CF-BB82-00AA00BDCE0B"
+    name: "HTML Application (HTA)"
+    risk: "critical"
+
+  - clsid: "06290BD3-48AA-11D2-8432-006008C3FBFC"
+    name: "Scriptlet Factory"
+    risk: "critical"
+
+  - clsid: "1D2680C9-0E2A-469D-B787-065558BC7D43"
+    name: "DynamicInstall Installer (DCOM)"
+    risk: "critical"
+
+  - clsid: "4590F811-1D3A-11D0-891F-00AA004B2E24"
+    name: "WBEM Locator (WMI)"
+    risk: "high"
+
+  - clsid: "ECABAFC6-7F19-11D2-978E-0000F8757E2A"
+    name: "New Moniker (potential exploit)"
+    risk: "critical"
+
+# File extensions that are considered suspicious when found embedded.
+suspicious_file_extensions:
+  critical:
+    - ".exe"
+    - ".dll"
+    - ".scr"
+    - ".pif"
+    - ".com"
+    - ".bat"
+    - ".cmd"
+    - ".vbs"
+    - ".vbe"
+    - ".js"
+    - ".jse"
+    - ".wsf"
+    - ".wsh"
+    - ".ps1"
+    - ".psm1"
+    - ".psd1"
+    - ".hta"
+    - ".cpl"
+    - ".msi"
+    - ".msp"
+    - ".mst"
+    - ".inf"
+    - ".reg"
+
+  high:
+    - ".jar"
+    - ".class"
+    - ".swf"
+    - ".lnk"
+    - ".url"
+    - ".iso"
+    - ".img"
+    - ".vhd"
+    - ".vhdx"
+
+  medium:
+    - ".docm"
+    - ".xlsm"
+    - ".pptm"
+    - ".dotm"
+    - ".xltm"
+    - ".potm"
+    - ".ppam"
+    - ".xlam"
+    - ".sldm"
+
+  low:
+    - ".doc"
+    - ".xls"
+    - ".ppt"
+    - ".rtf"
+    - ".pdf"
+    - ".zip"
+    - ".rar"
+    - ".7z"
+    - ".cab"
