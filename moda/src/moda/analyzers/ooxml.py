@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-import zipfile
+import html
 import io
 import re
+import zipfile
+from urllib.parse import unquote
 
 from ..core.base import BaseAnalyzer
 from ..core.context import AnalysisContext
@@ -80,6 +82,8 @@ class OOXMLAnalyzer(BaseAnalyzer):
         active_content: list[str] = []
         suspicious_text: list[str] = []
         update_fields: list[str] = []
+        exploit_protocols: list[str] = []
+        mshtml_activex: list[str] = []
 
         for name in archive.namelist():
             lowered_name = name.lower()
@@ -89,7 +93,7 @@ class OOXMLAnalyzer(BaseAnalyzer):
                 text = archive.read(name).decode("utf-8", errors="ignore")
             except Exception:
                 continue
-            lowered = text.lower()
+            lowered = self._normalize_text(text)
 
             if any(token in lowered for token in ("ddeauto", "dde ", "ddeexec")):
                 dde_hits.append(name)
@@ -101,7 +105,27 @@ class OOXMLAnalyzer(BaseAnalyzer):
                 suspicious_text.append(name)
             if "updatefields" in lowered and 'val="true"' in lowered:
                 update_fields.append(name)
+            if self._contains_office_exploit_protocol(lowered):
+                exploit_protocols.append(name)
+            if self._contains_mshtml_activex_chain(lowered):
+                mshtml_activex.append(name)
 
+        if exploit_protocols:
+            self._add_finding(
+                context,
+                title="OOXML Office Exploit Protocol",
+                description="Document XML references protocol handlers associated with Office vulnerability exploitation.",
+                severity=FindingSeverity.CRITICAL,
+                details={"parts": sorted(set(exploit_protocols))[:20]},
+            )
+        if mshtml_activex:
+            self._add_finding(
+                context,
+                title="OOXML MSHTML/ActiveX Exploit Markers",
+                description="Document XML contains MSHTML, ActiveX, classid, or OLE markers seen in Office exploit chains.",
+                severity=FindingSeverity.CRITICAL,
+                details={"parts": sorted(set(mshtml_activex))[:20]},
+            )
         if dde_hits:
             self._add_finding(
                 context,
@@ -163,7 +187,7 @@ class OOXMLAnalyzer(BaseAnalyzer):
                 text = archive.read(name).decode("utf-8", errors="ignore")
             except Exception:
                 continue
-            lowered = text.lower()
+            lowered = self._normalize_text(text)
             if self._contains_suspicious_formula(lowered):
                 suspicious_formulas.append(name)
             if 'state="veryhidden"' in lowered:
@@ -209,6 +233,37 @@ class OOXMLAnalyzer(BaseAnalyzer):
                 lowered,
             )
         )
+
+    def _contains_office_exploit_protocol(self, lowered: str) -> bool:
+        return any(
+            token in lowered
+            for token in (
+                "ms-msdt:",
+                "mhtml:",
+                "search-ms:",
+                "ms-officecmd:",
+                "ms-excel:",
+                "ms-word:",
+                "ms-powerpoint:",
+                "hcp:",
+                "script:",
+                "javascript:",
+            )
+        )
+
+    def _contains_mshtml_activex_chain(self, lowered: str) -> bool:
+        has_mshtml_or_html = any(token in lowered for token in ("mshtml", "htmlfile", ".html", "mhtml:"))
+        has_activex_or_class = any(token in lowered for token in ("activex", "classid", "clsid:", "oleobject"))
+        return has_mshtml_or_html and has_activex_or_class
+
+    def _normalize_text(self, text: str) -> str:
+        current = html.unescape(text)
+        for _ in range(2):
+            decoded = unquote(current)
+            if decoded == current:
+                break
+            current = decoded
+        return current.lower().replace("\x00", "")
 
     def _contains_suspicious_formula(self, lowered: str) -> bool:
         formula_markers = (

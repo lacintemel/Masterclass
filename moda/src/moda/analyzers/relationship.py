@@ -4,6 +4,7 @@ import io
 import re
 import xml.etree.ElementTree as ET
 import zipfile
+from urllib.parse import unquote
 
 from ..core.base import BaseAnalyzer
 from ..core.context import AnalysisContext
@@ -38,6 +39,22 @@ class RelationshipAnalyzer(BaseAnalyzer):
         context.extra["remote_relationship_details"] = deduped
 
         if deduped:
+            exploit_protocol = [
+                item
+                for item in deduped
+                if self._uses_office_exploit_protocol(item["target"])
+            ]
+            if exploit_protocol:
+                self._add_finding(
+                    context,
+                    title="Office Exploit Protocol Relationship",
+                    description="Document relationships reference protocol handlers used by Office exploit chains.",
+                    severity=FindingSeverity.CRITICAL,
+                    details={
+                        "relationships": exploit_protocol[:25],
+                        "relationship_count": len(exploit_protocol),
+                    },
+                )
             high_risk = [
                 item
                 for item in deduped
@@ -84,7 +101,11 @@ class RelationshipAnalyzer(BaseAnalyzer):
             target = element.attrib.get("Target", "")
             target_mode = element.attrib.get("TargetMode", "")
             rel_type = element.attrib.get("Type", "")
-            if self._is_remote_target(target) or target_mode.lower() == "external":
+            if (
+                self._is_remote_target(target)
+                or self._uses_office_exploit_protocol(target)
+                or target_mode.lower() == "external"
+            ):
                 relationships.append(
                     {
                         "target": target,
@@ -108,19 +129,48 @@ class RelationshipAnalyzer(BaseAnalyzer):
         return [match.group() for match in URL_PATTERN.finditer(text)]
 
     def _is_remote_target(self, target: str) -> bool:
-        return bool(re.match(r"(?i)^(?:https?|ftp|file|\\\\)", target))
+        normalized = self._normalize_target(target)
+        return bool(re.match(r"(?i)^(?:https?|ftp|file|mhtml|ms-msdt|search-ms|ms-officecmd|\\\\)", normalized))
 
     def _is_high_risk_relationship(self, rel_type: str, target: str) -> bool:
         lowered_type = rel_type.lower()
-        lowered_target = target.lower()
+        lowered_target = self._normalize_target(target)
         return (
             "attachedtemplate" in lowered_type
             or "oleobject" in lowered_type
             or "package" in lowered_type
             or "activex" in lowered_type
+            or self._uses_office_exploit_protocol(target)
             or lowered_target.startswith(("file:", "\\\\"))
-            or lowered_target.endswith((".dotm", ".dot", ".xlam", ".hta", ".vbs", ".js", ".exe", ".dll"))
+            or lowered_target.endswith((".dotm", ".dot", ".xlam", ".hta", ".vbs", ".js", ".exe", ".dll", ".html", ".hta"))
         )
+
+    def _uses_office_exploit_protocol(self, target: str) -> bool:
+        normalized = self._normalize_target(target)
+        return any(
+            token in normalized
+            for token in (
+                "ms-msdt:",
+                "mhtml:",
+                "search-ms:",
+                "ms-officecmd:",
+                "ms-excel:",
+                "ms-word:",
+                "ms-powerpoint:",
+                "hcp:",
+                "script:",
+                "javascript:",
+            )
+        )
+
+    def _normalize_target(self, target: str) -> str:
+        current = target
+        for _ in range(2):
+            decoded = unquote(current)
+            if decoded == current:
+                break
+            current = decoded
+        return current.lower().replace("&amp;", "&")
 
     def _dedupe_relationships(self, relationships: list[dict[str, str]]) -> list[dict[str, str]]:
         seen: set[tuple[str, str, str]] = set()

