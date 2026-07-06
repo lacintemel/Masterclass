@@ -52,6 +52,83 @@ extraction, relationship inspection, rule matching, and configurable scoring.
 - Local browser UI
 - Batch directory analysis with JSONL output
 
+## Project Tour
+
+MODA follows a simple static-analysis pipeline:
+
+```text
+input file
+  -> AnalysisContext
+  -> analyzers
+  -> IOC/YARA enrichment
+  -> RiskScorer
+  -> AnalysisResult
+  -> console/json/html/pdf/UI report
+```
+
+The main entry point is `src/moda/core/engine.py`. `AnalyzerEngine` reads the
+file once, creates an `AnalysisContext`, runs each analyzer in order, and freezes
+the final state into an `AnalysisResult`.
+
+Important modules:
+
+- `src/moda/cli.py` implements the command line, `doctor`, `batch`, and `ui`
+  commands.
+- `src/moda/core/` contains shared models, enums, exceptions, the base analyzer
+  class, context object, and pipeline engine.
+- `src/moda/analyzers/` contains static document analyzers:
+  - `file_type.py`: magic-byte, MIME, extension, and OOXML package validation.
+  - `hash_generator.py`: MD5, SHA1, SHA256 and hash IOCs.
+  - `metadata.py`: OOXML/OLE/PDF metadata extraction where supported.
+  - `ooxml.py`: DOCX/XLSX/PPTX structure, macro projects, DDE, ActiveX,
+    exploit protocols, Excel links/connections/formulas, hidden sheets.
+  - `ole.py`: legacy DOC/XLS/PPT stream inspection, VBA storage, ObjectPool,
+    packages, ActiveX, encrypted packages, Equation/DDE hints.
+  - `macro.py`: static macro string extraction and heuristics for auto-run,
+    command execution, downloaders, obfuscation, and native API abuse.
+  - `embedded.py`: embedded script, PE, OLE, ActiveX, nested PDF/ZIP detection.
+  - `relationship.py`: OOXML external relationships, remote templates, OLE
+    links, exploit protocol targets, and remote URL extraction.
+  - `pdf.py`: PDF JavaScript, OpenAction, Launch, URI, embedded files, forms,
+    object streams, and appended-content hints.
+  - `rtf.py`: RTF object, objdata, DDE, Equation exploit markers, and hex blobs.
+- `src/moda/intelligence/` contains IOC extraction and YARA scanning.
+- `src/moda/scoring/risk_scorer.py` converts findings/YARA matches into a
+  0-100 risk score with colored component breakdowns, potential impact, and
+  recovery guidance.
+- `src/moda/reporting/` renders console, JSON, HTML, and dependency-free PDF
+  reports.
+- `src/moda/ui/` is a local browser UI served by a small stdlib HTTP server.
+- `rules/` contains built-in, custom, external, and community YARA rules.
+- `tests/` contains regression tests for analyzers, reporting, UI, CLI, and
+  YARA rule compilation/matching.
+
+## Analysis Pipeline Details
+
+Default analyzer order:
+
+1. `FileTypeDetector`
+2. `HashGenerator`
+3. `MetadataAnalyzer`
+4. `OLEAnalyzer`
+5. `OOXMLAnalyzer`
+6. `RTFAnalyzer`
+7. `PDFAnalyzer`
+8. `MacroAnalyzer`
+9. `EmbeddedObjectAnalyzer`
+10. `RelationshipAnalyzer`
+11. `IOCExtractor`
+12. `YaraScanner`
+13. `RiskScorer`
+
+Analyzers communicate through `AnalysisContext`: they add findings, IOCs, YARA
+matches, metadata, macro strings, embedded strings, errors, and `extra` details.
+Reporters consume only the immutable `AnalysisResult` returned by the engine.
+
+Unsupported file types are not marked clean. MODA reports them as inconclusive
+with an `Unsupported File Type` finding because the tool is document-focused and
+does not try to replace a PE/ELF sandbox or full malware scanner.
+
 ## Requirements
 
 Use Python 3.10 or newer. Python 3.12 is recommended.
@@ -164,6 +241,25 @@ python3.12 -m unittest discover -s tests
 ```
 
 The UI integration test binds a local ephemeral port.
+
+## Agent Handoff Notes
+
+If another agent needs to understand or extend this project, give it this
+README plus the following checklist:
+
+- Start with `src/moda/core/engine.py` to understand pipeline order.
+- Read `src/moda/core/context.py` and `src/moda/core/models.py` to understand
+  what analyzers can write and what reporters receive.
+- Add new detection logic in the narrowest analyzer that owns that file format
+  or behavior.
+- Add a focused regression test in `tests/test_static_analyzers.py` or
+  `tests/test_yara_rules.py` for every new detection.
+- Run `python -m unittest discover -s tests` and `moda doctor` before claiming
+  the change is complete.
+- Keep third-party YARA rules in `rules/external/` or `rules/community/`;
+  review licenses before committing or redistributing them.
+- Avoid executing documents, macros, embedded scripts, or payloads. MODA is a
+  static triage tool by design.
 
 ## Current Status
 
