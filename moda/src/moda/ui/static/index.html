@@ -112,6 +112,7 @@
           <nav class="tabs" aria-label="Result sections">
             <button class="tab is-active" type="button" data-tab="findings">Findings</button>
             <button class="tab" type="button" data-tab="response">Response</button>
+            <button class="tab" type="button" data-tab="yara">YARA</button>
             <button class="tab" type="button" data-tab="iocs">IOCs</button>
             <button class="tab" type="button" data-tab="metadata">Metadata</button>
             <button class="tab" type="button" data-tab="json">JSON</button>
@@ -123,6 +124,9 @@
             </div>
             <div id="response" class="tab-panel">
               <div id="responseList" class="empty-state">No response guidance loaded</div>
+            </div>
+            <div id="yara" class="tab-panel">
+              <div id="yaraList" class="empty-state">No YARA matches loaded</div>
             </div>
             <div id="iocs" class="tab-panel">
               <div id="iocList" class="empty-state">No indicators loaded</div>

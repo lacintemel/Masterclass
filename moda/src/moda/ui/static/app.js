@@ -26,6 +26,7 @@ const el = {
   riskBreakdown: document.querySelector("#riskBreakdown"),
   findingsList: document.querySelector("#findingsList"),
   responseList: document.querySelector("#responseList"),
+  yaraList: document.querySelector("#yaraList"),
   iocList: document.querySelector("#iocList"),
   metadataList: document.querySelector("#metadataList"),
   jsonOutput: document.querySelector("#jsonOutput"),
@@ -200,6 +201,8 @@ function renderResult(result) {
     el.findingsList.textContent = "No analysis loaded";
     el.responseList.className = "empty-state";
     el.responseList.textContent = "No response guidance loaded";
+    el.yaraList.className = "empty-state";
+    el.yaraList.textContent = "No YARA matches loaded";
     el.iocList.className = "empty-state";
     el.iocList.textContent = "No indicators loaded";
     el.metadataList.className = "empty-state";
@@ -230,6 +233,7 @@ function renderResult(result) {
   renderRiskBreakdown(risk.breakdown || {});
   renderFindings(result.findings || []);
   renderResponse(risk.breakdown || {}, result.recommendations || []);
+  renderYaraMatches(result.yara_matches || [], result.errors || []);
   renderIocs(result.iocs || []);
   renderMetadata(result.metadata || {});
   el.jsonOutput.textContent = JSON.stringify(result, null, 2);
@@ -326,6 +330,48 @@ function renderResponse(breakdown, recommendations) {
 function listMarkup(items) {
   if (!items.length) return '<p class="muted-line">None</p>';
   return `<ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
+}
+
+function renderYaraMatches(matches, errors) {
+  const yaraErrors = errors.filter((item) => String(item).toLowerCase().includes("yara"));
+  if (!matches.length && !yaraErrors.length) {
+    el.yaraList.className = "empty-state";
+    el.yaraList.textContent = "No YARA matches";
+    return;
+  }
+
+  el.yaraList.className = "";
+  const matchMarkup = matches
+    .map((match) => {
+      const severity = match.meta?.severity || "medium";
+      const tags = Array.isArray(match.tags) && match.tags.length ? match.tags.join(", ") : "no tags";
+      return `
+        <article class="finding-item">
+          <div class="finding-head">
+            <strong>${escapeHtml(match.rule_name)}</strong>
+            <span class="severity ${escapeHtml(severity)}">${escapeHtml(severity)}</span>
+          </div>
+          <p>${escapeHtml(match.meta?.description || "YARA rule matched this file.")}</p>
+          <small>${escapeHtml(match.rule_namespace)} | ${escapeHtml(tags)} | strings: ${escapeHtml(match.strings_matched_count || 0)}</small>
+        </article>
+      `;
+    })
+    .join("");
+  const errorMarkup = yaraErrors
+    .map(
+      (error) => `
+        <article class="finding-item">
+          <div class="finding-head">
+            <strong>YARA Compile/Scan Warning</strong>
+            <span class="severity medium">medium</span>
+          </div>
+          <p>${escapeHtml(error)}</p>
+          <small>YaraScanner</small>
+        </article>
+      `,
+    )
+    .join("");
+  el.yaraList.innerHTML = matchMarkup + errorMarkup;
 }
 
 function renderIocs(iocs) {

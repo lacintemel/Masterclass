@@ -89,5 +89,19 @@ class YaraScanner(BaseAnalyzer):
                         meta=m.meta
                     )
                     context.add_yara_match(ym)
+                    self._add_finding(
+                        context,
+                        title=f"YARA Rule Match: {ym.rule_name}",
+                        description=f"File matched YARA rule '{ym.rule_name}' from namespace '{ym.rule_namespace}'.",
+                        severity=ym.severity_hint,
+                        details={
+                            "rule_name": ym.rule_name,
+                            "rule_namespace": ym.rule_namespace,
+                            "tags": list(ym.tags),
+                            "meta": ym.meta,
+                            "strings_matched_count": len(ym.strings_matched),
+                            "match_hash": ym.match_hash,
+                        },
+                    )
         except Exception as e:
             context.errors.append(f"YARA scanning error: {e}")

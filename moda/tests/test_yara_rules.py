@@ -122,6 +122,9 @@ rule unit_custom_rule_for_tests
 
         rules = {match.rule_name for match in result.yara_matches}
         self.assertIn("unit_custom_rule_for_tests", rules)
+        self.assertTrue(
+            any(finding.title == "YARA Rule Match: unit_custom_rule_for_tests" for finding in result.findings)
+        )
 
     def test_scanner_loads_external_rules_and_skips_bad_files(self) -> None:
         external_dir = Path(__file__).resolve().parents[1] / "rules" / "external" / "unit"
@@ -153,6 +156,9 @@ rule unit_external_rule_for_tests
         rules = {match.rule_name for match in result.yara_matches}
         self.assertIn("unit_external_rule_for_tests", rules)
         self.assertIn("yara_compile_errors", result.extra)
+        self.assertTrue(
+            any(finding.title == "YARA Rule Match: unit_external_rule_for_tests" for finding in result.findings)
+        )
 
 
 if __name__ == "__main__":
