@@ -160,7 +160,7 @@ rule ole_encrypted_content
         (
             ($encrypt_info and $encrypt_pkg) or
             $strong_encrypt or
-            ($data_spaces and $transform_info) or
+            ($data_spaces and ($transform_info or $primary_stream)) or
             ($drm_content) or
             ($rc4_header in (0..4096) and $password)
         )
@@ -186,13 +186,13 @@ rule ole_with_activex
         $cmd_button     = "CommandButton" ascii wide nocase
         $ole_control    = "OLEControl" ascii wide nocase
 
-        // Common dangerous ActiveX CLSIDs (in raw byte form)
+        // Common dangerous ActiveX CLSIDs (string form)
         // Shell.Explorer.2
-        $clsid_shell   = { 8856F961-340A-11D0-A96B-00C04FD705A2 }
+        $clsid_shell   = "8856F961-340A-11D0-A96B-00C04FD705A2" ascii wide nocase
         // ShockwaveFlash.ShockwaveFlash
-        $clsid_flash   = { D27CDB6E-AE6D-11CF-96B8-444553540000 }
+        $clsid_flash   = "D27CDB6E-AE6D-11CF-96B8-444553540000" ascii wide nocase
         // MSXML2.XMLHTTP
-        $clsid_xmlhttp = { 88D96A0A-F192-11D4-A65F-0040963251E5 }
+        $clsid_xmlhttp = "88D96A0A-F192-11D4-A65F-0040963251E5" ascii wide nocase
 
         // InProcServer / control registration
         $inproc = "InprocServer32" ascii wide nocase

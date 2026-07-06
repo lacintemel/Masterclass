@@ -107,7 +107,7 @@ rule macro_shell_execution
             any of ($create_shell*) or
             ($shell_app and $shell_execute) or
             ($win32_process and $process_create) or
-            ($create_wmi and any of ($cmd_exe, $cmd_slash_c, $powershell))
+            ($create_wmi and any of ($cmd_exe, $cmd_slash_c, $cmd_slash_k, $powershell, $pwsh, $mshta))
         )
 }
 
@@ -167,13 +167,13 @@ rule macro_download
     condition:
         any of ($vba_code, $vba_func) and
         (
-            (any of ($xmlhttp, $server_xmlhttp, $xmlhttp_obj, $winhttp) and any of ($http_open, $http_send)) or
+            (any of ($xmlhttp, $server_xmlhttp, $xmlhttp_obj, $winhttp) and any of ($http_open, $http_send) and any of ($http_get, $http_post, $http_resp, $http_text)) or
             ($url_download and $urlmon) or
             ($url_download and any of ($http_url, $https_url)) or
-            (any of ($ps_download, $ps_download2, $ps_webclient) and any of ($http_url, $https_url)) or
-            (any of ($inet_open, $inet_openw) and $inet_openurl) or
+            (any of ($ps_download, $ps_download2, $ps_webclient, $invoke_web, $iwr) and any of ($http_url, $https_url)) or
+            (any of ($inet_open, $inet_openw) and $inet_openurl and $inet_read) or
             ($adodb_stream and $save_tofile and any of ($http_url, $https_url)) or
-            (any of ($xmlhttp, $winhttp) and $http_resp and $adodb_stream)
+            (any of ($xmlhttp, $winhttp) and any of ($http_resp, $http_text) and $adodb_stream)
         )
 }
 
@@ -234,11 +234,11 @@ rule macro_obfuscated
         (
             (#chr_concat > 3 or #chrw_concat > 3) or
             (#many_chr > 15) or
-            ($str_concat and ($replace_func or $mid_func)) or
+            ($str_concat and any of ($replace_func, $mid_func, $left_func, $right_func)) or
             (any of ($base64_dec, $from_base64) and any of ($exec_code, $eval_code, $exec_global)) or
             ($callbyname and $strreverse) or
             ($strreverse and any of ($exec_code, $eval_code)) or
-            ($array_func and $join_func and any of ($exec_code, $shell*)) or
+            ($array_func and $join_func and any of ($exec_code, $eval_code, $exec_global)) or
             ($exec_global and ($replace_func or $strreverse or $environ))
         )
 }
@@ -292,11 +292,11 @@ rule macro_process_injection
         $declare and
         (
             ($virtual_alloc and ($rtl_move_memory or $write_process) and $create_thread) or
-            ($virtual_alloc_ex and $write_process and $create_remote) or
+            ($virtual_alloc_ex and $write_process and ($create_remote or $nt_create_thread)) or
             ($virtual_alloc and any of ($call_window_proc, $enum_windows, $enum_child, $enum_desktop)) or
-            ($open_process and $virtual_alloc_ex and $write_process) or
-            (2 of ($virtual_alloc, $virtual_protect, $rtl_move_memory, $create_thread) and ($page_exec or $mem_commit)) or
-            ($heap_alloc and $rtl_move_memory and any of ($call_window_proc, $create_thread))
+            ($open_process and ($enum_processes or $virtual_alloc_ex) and $write_process) or
+            (2 of ($virtual_alloc, $virtual_protect, $rtl_move_memory, $create_thread, $global_alloc, $local_alloc) and ($page_exec or $mem_commit)) or
+            (any of ($heap_alloc, $global_alloc, $local_alloc) and $rtl_move_memory and any of ($call_window_proc, $create_thread))
         )
 }
 
@@ -355,8 +355,8 @@ rule macro_environment_access
         (
             ($environ and 3 of ($env_*)) or
             (2 of ($wmi_*) and $environ) or
-            ($filesys_obj and ($create_text or $copy_file) and any of ($env_temp, $env_appdata, $env_tmp)) or
-            (any of ($reg_read, $reg_write) and $shell_reg and $environ) or
+            ($filesys_obj and ($create_text or $write_line or $copy_file) and any of ($env_temp, $env_appdata, $env_tmp)) or
+            (any of ($reg_read, $reg_write, $reg_delete) and $shell_reg and $environ) or
             ($filesys_obj and any of ($delete_file, $move_file) and $environ)
         )
 }
