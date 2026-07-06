@@ -72,6 +72,40 @@ class MODAUIServerTests(unittest.TestCase):
         self.assertEqual(payload["metadata"]["Author"], "UI Analyst")
         self.assertEqual(payload["risk"]["level"], "low")
 
+    def test_report_endpoint_returns_pdf(self) -> None:
+        server = ThreadingHTTPServer(("127.0.0.1", 0), MODAUIHandler)
+        server.skip_yara = False
+        server.max_size_mb = 100
+        server.verbose = False
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+
+        try:
+            with tempfile.TemporaryDirectory() as temp_dir:
+                sample = Path(temp_dir) / "ui report.docx"
+                build_docx(sample)
+                url = f"http://127.0.0.1:{server.server_port}/api/report?yara=0"
+                request = urllib.request.Request(
+                    url,
+                    data=sample.read_bytes(),
+                    method="POST",
+                    headers={
+                        "Content-Type": "application/octet-stream",
+                        "X-Filename": "ui%20report.docx",
+                    },
+                )
+                with urllib.request.urlopen(request, timeout=5) as response:
+                    content_type = response.headers.get("Content-Type")
+                    body = response.read()
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+
+        self.assertEqual(content_type, "application/pdf")
+        self.assertTrue(body.startswith(b"%PDF-1.4"))
+        self.assertIn(b"%%EOF", body)
+
 
 if __name__ == "__main__":
     unittest.main()

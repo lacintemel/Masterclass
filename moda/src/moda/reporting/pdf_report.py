@@ -28,8 +28,55 @@ class PDFReporter(BaseReporter):
             f"SHA1: {result.file_hash_sha1}",
             f"SHA256: {result.file_hash_sha256}",
             "",
-            "Findings:",
+            "Risk Score Breakdown:",
         ]
+        components = result.score_breakdown.get("components", [])
+        if components:
+            for component in components:
+                lines.extend(
+                    wrap(
+                        "- "
+                        f"{component.get('label', 'Risk component')}: "
+                        f"{component.get('points', 0)}/100 "
+                        f"({component.get('percentage', 0)}%) - "
+                        f"{component.get('description', '')}",
+                        width=92,
+                    )
+                )
+                reasons = component.get("reasons", [])
+                if isinstance(reasons, list) and reasons:
+                    lines.extend(wrap(f"  Evidence: {', '.join(str(item) for item in reasons[:6])}", width=92))
+        else:
+            lines.append("- No score contributors")
+
+        lines.extend(
+            [
+                "",
+                "Potential Impact:",
+            ]
+        )
+        for impact in result.score_breakdown.get("potential_impacts", []):
+            lines.extend(wrap(f"- {impact}", width=92))
+        if not result.score_breakdown.get("potential_impacts"):
+            lines.append("- No concrete impact path was identified from static indicators alone.")
+
+        lines.extend(
+            [
+                "",
+                "Recovery / Response:",
+            ]
+        )
+        for step in result.score_breakdown.get("recovery_steps", []):
+            lines.extend(wrap(f"- {step}", width=92))
+        if not result.score_breakdown.get("recovery_steps"):
+            lines.append("- Keep the file quarantined and review findings before opening.")
+
+        lines.extend(
+            [
+                "",
+            "Findings:",
+            ]
+        )
         if result.findings:
             for finding in result.findings[:40]:
                 lines.extend(
@@ -53,7 +100,7 @@ class PDFReporter(BaseReporter):
         lines.append("Recommendations:")
         for recommendation in result.recommendations:
             lines.extend(wrap(f"- {recommendation}", width=92))
-        return lines[:95]
+        return lines[:140]
 
     def _minimal_pdf(self, lines: list[str]) -> bytes:
         y = 780

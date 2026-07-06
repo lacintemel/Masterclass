@@ -3,11 +3,14 @@ from __future__ import annotations
 import json
 import mimetypes
 import tempfile
+from dataclasses import replace
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
 from moda.core.engine import AnalyzerEngine
+from moda.core.models import AnalysisResult
+from moda.reporting.pdf_report import PDFReporter
 
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -32,7 +35,7 @@ class MODAUIHandler(SimpleHTTPRequestHandler):
 
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
-        if parsed.path != "/api/analyze":
+        if parsed.path not in {"/api/analyze", "/api/report"}:
             self.send_error(404, "Not found")
             return
 
@@ -63,8 +66,12 @@ class MODAUIHandler(SimpleHTTPRequestHandler):
                 max_file_size_mb=max_size_mb,
             )
             result = engine.analyze_file(temp_path)
+            display_name = Path(original_name).name
+            result = replace(result, file_name=display_name, file_path=display_name)
+            if parsed.path == "/api/report":
+                self._send_pdf(result, display_name)
+                return
             payload = result.to_dict()
-            payload["file_info"]["file_name"] = Path(original_name).name
             self._send_json(payload)
         except Exception as exc:
             self._send_json({"error": str(exc)}, status=500)
@@ -91,6 +98,16 @@ class MODAUIHandler(SimpleHTTPRequestHandler):
         body = json.dumps(payload, default=str).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _send_pdf(self, result: AnalysisResult, original_name: str) -> None:
+        body = PDFReporter().generate(result)
+        report_name = f"{Path(original_name).stem or 'moda'}-moda-report.pdf"
+        self.send_response(200)
+        self.send_header("Content-Type", "application/pdf")
+        self.send_header("Content-Disposition", f'attachment; filename="{report_name}"')
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)

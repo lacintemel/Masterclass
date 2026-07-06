@@ -59,11 +59,12 @@ button {
 .hero-band,
 .metric-row,
 .facts-grid,
-.tabs,
-.json-toolbar,
-.panel-title,
-.switch-row,
-.file-ledger {
+  .tabs,
+  .json-toolbar,
+  .report-actions,
+  .panel-title,
+  .switch-row,
+  .file-ledger {
   display: flex;
 }
 
@@ -458,6 +459,126 @@ h2 {
 .secondary-btn {
   min-height: 36px;
   padding: 0 12px;
+}
+
+.report-actions {
+  margin-top: 12px;
+}
+
+.report-btn {
+  border-color: rgba(214, 180, 106, 0.44);
+  color: var(--ivory);
+}
+
+.report-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.risk-breakdown {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 10px;
+  margin: 0 0 16px;
+}
+
+.risk-component {
+  min-width: 0;
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.13);
+}
+
+.risk-component-head {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+}
+
+.risk-component-head strong {
+  overflow-wrap: anywhere;
+}
+
+.risk-component-head b {
+  color: var(--component-color);
+}
+
+.component-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--component-color);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--component-color), transparent 78%);
+}
+
+.component-bar {
+  height: 7px;
+  margin: 11px 0 9px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(244, 239, 228, 0.1);
+}
+
+.component-bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--component-color);
+}
+
+.risk-component p,
+.risk-component small,
+.muted-line {
+  color: var(--muted);
+}
+
+.risk-component p {
+  margin: 0;
+  line-height: 1.45;
+}
+
+.risk-component small {
+  display: block;
+  margin-top: 8px;
+  overflow-wrap: anywhere;
+}
+
+.response-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.response-grid section {
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.response-grid section:last-child {
+  border-bottom: 0;
+}
+
+.response-grid h3 {
+  margin: 0 0 10px;
+  font-size: 0.95rem;
+}
+
+.response-grid ul {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding-left: 20px;
+  color: var(--muted);
+}
+
+.response-grid li {
+  line-height: 1.45;
+}
+
+.compact {
+  min-height: 82px;
+  grid-column: 1 / -1;
 }
 
 pre {

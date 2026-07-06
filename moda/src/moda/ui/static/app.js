@@ -21,8 +21,11 @@ const el = {
   findingCount: document.querySelector("#findingCount"),
   iocCount: document.querySelector("#iocCount"),
   yaraCount: document.querySelector("#yaraCount"),
+  downloadPdfBtn: document.querySelector("#downloadPdfBtn"),
   factsGrid: document.querySelector("#factsGrid"),
+  riskBreakdown: document.querySelector("#riskBreakdown"),
   findingsList: document.querySelector("#findingsList"),
+  responseList: document.querySelector("#responseList"),
   iocList: document.querySelector("#iocList"),
   metadataList: document.querySelector("#metadataList"),
   jsonOutput: document.querySelector("#jsonOutput"),
@@ -58,7 +61,7 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
-function drawRisk(score = 0, level = "low") {
+function drawRisk(score = 0, level = "low", components = []) {
   const ctx = el.riskCanvas.getContext("2d");
   const size = el.riskCanvas.width;
   const center = size / 2;
@@ -72,12 +75,28 @@ function drawRisk(score = 0, level = "low") {
   ctx.strokeStyle = "rgba(244, 239, 228, 0.12)";
   ctx.stroke();
 
-  ctx.beginPath();
-  ctx.arc(center, center, radius, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (score / 100));
-  ctx.lineWidth = 13;
-  ctx.lineCap = "round";
-  ctx.strokeStyle = color;
-  ctx.stroke();
+  const visibleComponents = components.filter((item) => Number(item.percentage || 0) > 0);
+  if (visibleComponents.length) {
+    let start = -Math.PI / 2;
+    visibleComponents.forEach((component) => {
+      const share = Math.min(Number(component.percentage || 0), 100) / 100;
+      const end = start + Math.PI * 2 * share;
+      ctx.beginPath();
+      ctx.arc(center, center, radius, start, end);
+      ctx.lineWidth = 13;
+      ctx.lineCap = "butt";
+      ctx.strokeStyle = component.color || color;
+      ctx.stroke();
+      start = end;
+    });
+  } else {
+    ctx.beginPath();
+    ctx.arc(center, center, radius, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (score / 100));
+    ctx.lineWidth = 13;
+    ctx.lineCap = "round";
+    ctx.strokeStyle = color;
+    ctx.stroke();
+  }
 
   for (let i = 0; i < 34; i += 1) {
     const angle = (i / 34) * Math.PI * 2;
@@ -169,14 +188,18 @@ function renderResult(result) {
     el.findingCount.textContent = "0";
     el.iocCount.textContent = "0";
     el.yaraCount.textContent = "0";
+    el.downloadPdfBtn.disabled = true;
     el.factsGrid.innerHTML = factMarkup([
       ["Type", "-"],
       ["MIME", "-"],
       ["Duration", "-"],
       ["SHA256", "-"],
     ]);
+    el.riskBreakdown.innerHTML = '<div class="empty-state compact">No score contributors</div>';
     el.findingsList.className = "empty-state";
     el.findingsList.textContent = "No analysis loaded";
+    el.responseList.className = "empty-state";
+    el.responseList.textContent = "No response guidance loaded";
     el.iocList.className = "empty-state";
     el.iocList.textContent = "No indicators loaded";
     el.metadataList.className = "empty-state";
@@ -189,20 +212,24 @@ function renderResult(result) {
   const fileInfo = result.file_info || {};
   const score = Math.round(Number(risk.score || 0));
   const level = risk.level || "low";
-  drawRisk(score, level);
+  const components = risk.breakdown?.components || [];
+  drawRisk(score, level, components);
   el.riskScore.textContent = String(score);
   el.riskLabel.textContent = level;
   el.resultTitle.textContent = fileInfo.file_name || "Analysis complete";
   el.findingCount.textContent = String((result.findings || []).length);
   el.iocCount.textContent = String((result.iocs || []).length);
   el.yaraCount.textContent = String((result.yara_matches || []).length);
+  el.downloadPdfBtn.disabled = false;
   el.factsGrid.innerHTML = factMarkup([
     ["Type", fileInfo.file_type || "-"],
     ["MIME", fileInfo.mime_type || "-"],
     ["Duration", `${Number(result.analysis?.duration_seconds || 0).toFixed(3)}s`],
     ["SHA256", result.hashes?.sha256 || "-"],
   ]);
+  renderRiskBreakdown(risk.breakdown || {});
   renderFindings(result.findings || []);
+  renderResponse(risk.breakdown || {}, result.recommendations || []);
   renderIocs(result.iocs || []);
   renderMetadata(result.metadata || {});
   el.jsonOutput.textContent = JSON.stringify(result, null, 2);
@@ -211,6 +238,39 @@ function renderResult(result) {
 function factMarkup(items) {
   return items
     .map(([label, value]) => `<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`)
+    .join("");
+}
+
+function renderRiskBreakdown(breakdown) {
+  const components = breakdown.components || [];
+  if (!components.length) {
+    el.riskBreakdown.innerHTML = '<div class="empty-state compact">No score contributors</div>';
+    return;
+  }
+
+  el.riskBreakdown.innerHTML = components
+    .map((component) => {
+      const percentage = Number(component.percentage || 0);
+      const reasons = Array.isArray(component.reasons) ? component.reasons.slice(0, 5) : [];
+      return `
+        <article class="risk-component" style="--component-color: ${escapeHtml(component.color || "#6fcf97")}">
+          <div class="risk-component-head">
+            <span class="component-swatch" aria-hidden="true"></span>
+            <strong>${escapeHtml(component.label || component.key || "Risk")}</strong>
+            <b>${percentage.toFixed(1)}%</b>
+          </div>
+          <div class="component-bar" aria-hidden="true">
+            <span style="width: ${Math.max(1, Math.min(percentage, 100))}%"></span>
+          </div>
+          <p>${escapeHtml(component.description || "")}</p>
+          ${
+            reasons.length
+              ? `<small>${escapeHtml(reasons.join(" | "))}</small>`
+              : ""
+          }
+        </article>
+      `;
+    })
     .join("");
 }
 
@@ -235,6 +295,37 @@ function renderFindings(findings) {
       `,
     )
     .join("");
+}
+
+function renderResponse(breakdown, recommendations) {
+  const impacts = breakdown.potential_impacts || [];
+  const recovery = breakdown.recovery_steps || [];
+  if (!impacts.length && !recovery.length && !recommendations.length) {
+    el.responseList.className = "empty-state";
+    el.responseList.textContent = "No response guidance";
+    return;
+  }
+
+  el.responseList.className = "response-grid";
+  el.responseList.innerHTML = `
+    <section>
+      <h3>Potential Impact</h3>
+      ${listMarkup(impacts)}
+    </section>
+    <section>
+      <h3>Recovery</h3>
+      ${listMarkup(recovery)}
+    </section>
+    <section>
+      <h3>Recommendations</h3>
+      ${listMarkup(recommendations)}
+    </section>
+  `;
+}
+
+function listMarkup(items) {
+  if (!items.length) return '<p class="muted-line">None</p>';
+  return `<ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
 }
 
 function renderIocs(iocs) {
@@ -312,6 +403,39 @@ el.dropzone.addEventListener("drop", (event) => {
 
 el.analyzeBtn.addEventListener("click", analyze);
 el.resetBtn.addEventListener("click", reset);
+
+el.downloadPdfBtn.addEventListener("click", async () => {
+  if (!state.file || !state.result) return;
+  el.downloadPdfBtn.disabled = true;
+  el.downloadPdfBtn.textContent = "Preparing";
+  try {
+    const params = new URLSearchParams();
+    params.set("yara", el.yaraToggle.checked ? "1" : "0");
+    const response = await fetch(`/api/report?${params.toString()}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/octet-stream",
+        "X-Filename": encodeURIComponent(state.file.name),
+      },
+      body: await state.file.arrayBuffer(),
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      throw new Error(payload.error || "Report failed");
+    }
+    const blob = await response.blob();
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `${state.result.file_info?.file_name || "moda"}-report.pdf`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    el.downloadPdfBtn.disabled = false;
+    el.downloadPdfBtn.textContent = "PDF Report";
+  }
+});
 
 el.copyJsonBtn.addEventListener("click", async () => {
   await navigator.clipboard.writeText(el.jsonOutput.textContent);

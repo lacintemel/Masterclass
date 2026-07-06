@@ -90,6 +90,11 @@
                   <strong id="yaraCount">0</strong>
                 </div>
               </div>
+              <div class="report-actions">
+                <button id="downloadPdfBtn" class="secondary-btn report-btn" type="button" disabled>
+                  PDF Report
+                </button>
+              </div>
             </div>
           </div>
 
@@ -100,8 +105,13 @@
             <div><span>SHA256</span><strong>-</strong></div>
           </div>
 
+          <section class="risk-breakdown" id="riskBreakdown">
+            <div class="empty-state compact">No score contributors</div>
+          </section>
+
           <nav class="tabs" aria-label="Result sections">
             <button class="tab is-active" type="button" data-tab="findings">Findings</button>
+            <button class="tab" type="button" data-tab="response">Response</button>
             <button class="tab" type="button" data-tab="iocs">IOCs</button>
             <button class="tab" type="button" data-tab="metadata">Metadata</button>
             <button class="tab" type="button" data-tab="json">JSON</button>
@@ -110,6 +120,9 @@
           <section class="tab-stage">
             <div id="findings" class="tab-panel is-active">
               <div id="findingsList" class="empty-state">No analysis loaded</div>
+            </div>
+            <div id="response" class="tab-panel">
+              <div id="responseList" class="empty-state">No response guidance loaded</div>
             </div>
             <div id="iocs" class="tab-panel">
               <div id="iocList" class="empty-state">No indicators loaded</div>
