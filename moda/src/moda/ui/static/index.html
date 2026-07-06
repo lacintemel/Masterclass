@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MODA</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div class="brand-lockup">
+          <div class="mark" aria-hidden="true">
+            <span></span>
+          </div>
+          <div>
+            <h1>MODA</h1>
+            <p>Document threat analysis</p>
+          </div>
+        </div>
+        <div class="system-strip" aria-live="polite">
+          <span id="healthDot" class="dot"></span>
+          <span id="healthText">Checking engine</span>
+        </div>
+      </header>
+
+      <section class="workspace">
+        <aside class="intake-panel">
+          <div class="panel-title">
+            <span>Intake</span>
+            <button id="resetBtn" class="icon-btn" type="button" title="Reset">
+              <span aria-hidden="true">↺</span>
+            </button>
+          </div>
+
+          <label id="dropzone" class="dropzone" for="fileInput">
+            <input id="fileInput" type="file" />
+            <span class="scan-glyph" aria-hidden="true"></span>
+            <strong id="dropTitle">Drop document</strong>
+            <small id="dropMeta">Office, RTF, or PDF</small>
+          </label>
+
+          <div class="scan-options">
+            <label class="switch-row">
+              <span>YARA scan</span>
+              <input id="yaraToggle" type="checkbox" checked />
+            </label>
+          </div>
+
+          <button id="analyzeBtn" class="primary-btn" type="button" disabled>
+            <span aria-hidden="true">◆</span>
+            Analyze
+          </button>
+
+          <div class="file-ledger" id="fileLedger">
+            <div>
+              <span>Selected</span>
+              <strong>None</strong>
+            </div>
+            <div>
+              <span>Size</span>
+              <strong>-</strong>
+            </div>
+          </div>
+        </aside>
+
+        <section class="results-panel">
+          <div class="hero-band">
+            <div class="risk-orbit" aria-label="Risk score">
+              <canvas id="riskCanvas" width="190" height="190"></canvas>
+              <div class="risk-core">
+                <span id="riskScore">--</span>
+                <small id="riskLabel">Ready</small>
+              </div>
+            </div>
+            <div class="summary-stack">
+              <div class="eyebrow">Analysis</div>
+              <h2 id="resultTitle">Awaiting document</h2>
+              <div class="metric-row">
+                <div>
+                  <span>Findings</span>
+                  <strong id="findingCount">0</strong>
+                </div>
+                <div>
+                  <span>IOCs</span>
+                  <strong id="iocCount">0</strong>
+                </div>
+                <div>
+                  <span>YARA</span>
+                  <strong id="yaraCount">0</strong>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="facts-grid" id="factsGrid">
+            <div><span>Type</span><strong>-</strong></div>
+            <div><span>MIME</span><strong>-</strong></div>
+            <div><span>Duration</span><strong>-</strong></div>
+            <div><span>SHA256</span><strong>-</strong></div>
+          </div>
+
+          <nav class="tabs" aria-label="Result sections">
+            <button class="tab is-active" type="button" data-tab="findings">Findings</button>
+            <button class="tab" type="button" data-tab="iocs">IOCs</button>
+            <button class="tab" type="button" data-tab="metadata">Metadata</button>
+            <button class="tab" type="button" data-tab="json">JSON</button>
+          </nav>
+
+          <section class="tab-stage">
+            <div id="findings" class="tab-panel is-active">
+              <div id="findingsList" class="empty-state">No analysis loaded</div>
+            </div>
+            <div id="iocs" class="tab-panel">
+              <div id="iocList" class="empty-state">No indicators loaded</div>
+            </div>
+            <div id="metadata" class="tab-panel">
+              <div id="metadataList" class="empty-state">No metadata loaded</div>
+            </div>
+            <div id="json" class="tab-panel">
+              <div class="json-toolbar">
+                <button id="copyJsonBtn" class="secondary-btn" type="button">Copy JSON</button>
+                <button id="downloadJsonBtn" class="secondary-btn" type="button">Download</button>
+              </div>
+              <pre id="jsonOutput">{}</pre>
+            </div>
+          </section>
+        </section>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

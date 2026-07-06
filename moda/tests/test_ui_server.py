@@ -1,0 +1,77 @@
+from __future__ import annotations
+
+import json
+import sys
+import tempfile
+import threading
+import unittest
+import urllib.request
+import zipfile
+from http.server import ThreadingHTTPServer
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+
+from moda.ui.server import MODAUIHandler
+
+
+def build_docx(path: Path) -> None:
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr(
+            "[Content_Types].xml",
+            '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>',
+        )
+        archive.writestr(
+            "docProps/core.xml",
+            (
+                '<cp:coreProperties '
+                'xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" '
+                'xmlns:dc="http://purl.org/dc/elements/1.1/">'
+                "<dc:creator>UI Analyst</dc:creator>"
+                "</cp:coreProperties>"
+            ),
+        )
+        archive.writestr(
+            "word/document.xml",
+            '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>',
+        )
+
+
+class MODAUIServerTests(unittest.TestCase):
+    def test_analyze_endpoint_returns_result_json(self) -> None:
+        server = ThreadingHTTPServer(("127.0.0.1", 0), MODAUIHandler)
+        server.skip_yara = False
+        server.max_size_mb = 100
+        server.verbose = False
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+
+        try:
+            with tempfile.TemporaryDirectory() as temp_dir:
+                sample = Path(temp_dir) / "ui sample.docx"
+                build_docx(sample)
+                url = f"http://127.0.0.1:{server.server_port}/api/analyze?yara=0"
+                request = urllib.request.Request(
+                    url,
+                    data=sample.read_bytes(),
+                    method="POST",
+                    headers={
+                        "Content-Type": "application/octet-stream",
+                        "X-Filename": "ui%20sample.docx",
+                    },
+                )
+                with urllib.request.urlopen(request, timeout=5) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+
+        self.assertEqual(payload["file_info"]["file_name"], "ui sample.docx")
+        self.assertEqual(payload["file_info"]["file_type"], "ooxml_docx")
+        self.assertEqual(payload["metadata"]["Author"], "UI Analyst")
+        self.assertEqual(payload["risk"]["level"], "low")
+
+
+if __name__ == "__main__":
+    unittest.main()
