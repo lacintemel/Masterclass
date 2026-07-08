@@ -8,9 +8,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from moda.core.engine import AnalyzerEngine
+import moda.analyzers.macro as macro_module
+from moda.analyzers.embedded import EmbeddedObjectAnalyzer
+from moda.analyzers.macro import MacroAnalyzer
 from moda.analyzers.ole import OLEAnalyzer
 from moda.core.context import AnalysisContext
+from moda.core.engine import AnalyzerEngine
+from moda.core.enums import FileType
 
 
 def analyze_bytes(file_name: str, data: bytes):
@@ -272,8 +276,11 @@ class StaticAnalyzerTests(unittest.TestCase):
                 return b"Sub AutoOpen()\nCreateObject(\"WScript.Shell\")\nEnd Sub"
 
         class FakeOLE:
-            def listdir(self):
+            def listdir(self, streams=True, storages=False):
+                if storages and not streams:
+                    return [["Macros"], ["Macros", "VBA"], ["ObjectPool"], ["ActiveX"]]
                 return [
+                    ["\x01CompObj"],
                     ["Macros", "VBA", "Module1"],
                     ["ObjectPool", "_123456"],
                     ["ActiveX", "Control1"],
@@ -286,28 +293,41 @@ class StaticAnalyzerTests(unittest.TestCase):
             def openstream(self, stream):
                 return FakeStream()
 
+            def get_size(self, stream):
+                return 114 if stream == ["\x01CompObj"] else 512
+
         context = AnalysisContext("sample.doc", b"\xd0\xcf\x11\xe0" + b"\x00" * 512)
         analyzer = OLEAnalyzer()
         analyzer._inspect_streams(context, FakeOLE())
         analyzer._check_vba_storage(context, FakeOLE())
         analyzer._check_activex(context, FakeOLE())
+        analyzer._record_directory_tree(context, FakeOLE())
 
         titles = {finding.title for finding in context.findings}
+        self.assertIn("OLE Stream Inventory", titles)
         self.assertIn("OLE Object Pool", titles)
         self.assertIn("OLE Embedded Package Stream", titles)
         self.assertIn("VBA Macros Present", titles)
         self.assertIn("ActiveX Controls Present", titles)
         self.assertIn("AutoOpen", "\n".join(context.macro_code))
+        self.assertEqual(context.extra["ole_stream_count"], 5)
+        self.assertEqual(context.extra["ole_directory_count"], 9)
+        self.assertEqual(context.extra["ole_stream_inventory"][0]["display_name"], "\\x01CompObj")
 
     def test_ole_helper_flags_encrypted_package_and_dde_hints(self) -> None:
         class FakeOLE:
-            def listdir(self):
+            def listdir(self, streams=True, storages=False):
+                if storages and not streams:
+                    return []
                 return [
                     ["EncryptedPackage"],
                     ["EncryptionInfo"],
                     ["ObjectPool", "Equation Native"],
                     ["DDE", "LinkInfo"],
                 ]
+
+            def get_size(self, stream):
+                return 256
 
         context = AnalysisContext("encrypted.doc", b"\xd0\xcf\x11\xe0" + b"\x00" * 512)
         analyzer = OLEAnalyzer()
@@ -316,6 +336,73 @@ class StaticAnalyzerTests(unittest.TestCase):
         titles = {finding.title for finding in context.findings}
         self.assertIn("Encrypted Office Package", titles)
         self.assertIn("OLE Exploit-Or-DDE Hint", titles)
+
+    def test_powerpoint_ole_stream_links_commands_and_activex_are_flagged(self) -> None:
+        class FakeStream:
+            def read(self) -> bytes:
+                return (
+                    b"http://evil.example/payload "
+                    b"mhtml:http://evil.example/a.html!x-usc:ms-msdt:/id "
+                    b"cmd.exe /c calc ActiveX OLEObject"
+                )
+
+        class FakeOLE:
+            def listdir(self, *args, **kwargs):
+                return [["PowerPoint Document"], ["Current User"]]
+
+            def openstream(self, stream):
+                return FakeStream()
+
+        context = AnalysisContext("sample.ppt", b"\xd0\xcf\x11\xe0" + b"\x00" * 512)
+        context.file_type = FileType.OLE_PPT
+        analyzer = OLEAnalyzer()
+        analyzer._inspect_powerpoint_streams(context, FakeOLE())
+
+        titles = {finding.title for finding in context.findings}
+        self.assertIn("PowerPoint External Link", titles)
+        self.assertIn("PowerPoint Office Exploit Protocol", titles)
+        self.assertIn("Suspicious Command Text In PowerPoint", titles)
+        self.assertIn("PowerPoint OLE Or Active Content Markers", titles)
+
+    def test_embedded_analyzer_ignores_invalid_raw_zip_signature(self) -> None:
+        data = b"\xd0\xcf\x11\xe0" + b"A" * 128 + b"PK\x03\x04not-a-real-zip" + b"B" * 128
+        embedded = EmbeddedObjectAnalyzer()._collect_raw_nested_payloads(data)
+
+        self.assertEqual(embedded, [])
+
+    def test_macro_analyzer_uses_oletools_for_powerpoint_vba(self) -> None:
+        class FakeVBAParser:
+            def __init__(self, filename, data=None):
+                self.filename = filename
+                self.data = data
+                self.closed = False
+
+            def detect_vba_macros(self):
+                return True
+
+            def extract_macros(self):
+                yield (
+                    "sample.ppt",
+                    "VBA/Module1",
+                    "Module1.bas",
+                    'Sub Auto_Open()\nShell "cmd.exe /c calc"\nEnd Sub',
+                )
+
+            def close(self):
+                self.closed = True
+
+        original_parser = macro_module.VBA_Parser
+        macro_module.VBA_Parser = FakeVBAParser
+        self.addCleanup(lambda: setattr(macro_module, "VBA_Parser", original_parser))
+
+        context = AnalysisContext("sample.pps", b"\xd0\xcf\x11\xe0" + b"\x00" * 512)
+        context.file_type = FileType.OLE_PPT
+        MacroAnalyzer().analyze(context)
+
+        titles = {finding.title for finding in context.findings}
+        self.assertIn("VBA Macros Present", titles)
+        self.assertIn("Macro Auto-Execution Trigger", titles)
+        self.assertIn("Macro Process Execution", titles)
 
 
 if __name__ == "__main__":

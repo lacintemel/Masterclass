@@ -14,6 +14,11 @@ try:
 except ImportError:  # pragma: no cover - optional analyzer dependency
     olefile = None
 
+try:
+    from oletools.olevba import VBA_Parser
+except ImportError:  # pragma: no cover - optional analyzer dependency
+    VBA_Parser = None
+
 class MacroAnalyzer(BaseAnalyzer):
     @property
     def name(self) -> str:
@@ -28,6 +33,15 @@ class MacroAnalyzer(BaseAnalyzer):
         if not macro_strings:
             return
 
+        if not self._has_macro_presence_finding(context):
+            self._add_finding(
+                context,
+                title="VBA Macros Present",
+                description="Document contains extractable VBA macro code.",
+                severity=FindingSeverity.HIGH,
+                details={"source": "macro extraction"},
+            )
+
         context.macro_code.extend(macro_strings)
         macro_text = "\n".join(macro_strings)
         lowered = macro_text.lower()
@@ -40,9 +54,10 @@ class MacroAnalyzer(BaseAnalyzer):
 
     def _collect_macro_strings(self, context: AnalysisContext) -> list[str]:
         chunks: list[str] = []
-        if context.file_type.is_ooxml:
+        chunks.extend(self._extract_vba_with_oletools(context))
+        if context.file_type.is_ooxml and not chunks:
             chunks.extend(self._extract_ooxml_vba_strings(context.file_bytes))
-        elif context.file_type.is_ole:
+        elif context.file_type.is_ole and not chunks:
             chunks.extend(self._extract_ole_vba_strings(context.file_bytes))
 
         if context.file_type.is_macro_enabled and not chunks:
@@ -52,6 +67,30 @@ class MacroAnalyzer(BaseAnalyzer):
                 if self._looks_like_macro_text(text)
             )
         return list(dict.fromkeys(chunks))
+
+    def _extract_vba_with_oletools(self, context: AnalysisContext) -> list[str]:
+        if VBA_Parser is None or not (context.file_type.is_ole or context.file_type.is_ooxml):
+            return []
+
+        parser = None
+        try:
+            parser = VBA_Parser(str(context.file_path), data=context.file_bytes)
+            if not parser.detect_vba_macros():
+                return []
+            modules: list[str] = []
+            for _, stream_path, vba_filename, vba_code in parser.extract_macros():
+                if not vba_code:
+                    continue
+                modules.append(f"' {stream_path or vba_filename}\n{vba_code}")
+            return modules
+        except Exception:
+            return []
+        finally:
+            if parser is not None:
+                try:
+                    parser.close()
+                except Exception:
+                    pass
 
     def _extract_ooxml_vba_strings(self, data: bytes) -> list[str]:
         strings: list[str] = []
@@ -74,7 +113,8 @@ class MacroAnalyzer(BaseAnalyzer):
                     stream_name = "/".join(stream).lower()
                     if "vba" in stream_name or stream_name.endswith(("/dir", "/project")):
                         try:
-                            strings.extend(extract_strings(ole.openstream(stream).read(), min_length=4))
+                            data = ole.openstream(stream).read()
+                            strings.extend(extract_strings(data, min_length=4))
                         except Exception:
                             continue
         except Exception:
@@ -95,6 +135,12 @@ class MacroAnalyzer(BaseAnalyzer):
                 "wscript.shell",
                 "powershell",
             )
+        )
+
+    def _has_macro_presence_finding(self, context: AnalysisContext) -> bool:
+        return any(
+            finding.title in {"VBA Macros Present", "Macro Project In Non-Macro OOXML"}
+            for finding in context.findings
         )
 
     def _scan_auto_execution(self, context: AnalysisContext, lowered: str) -> None:
@@ -186,7 +232,13 @@ class MacroAnalyzer(BaseAnalyzer):
             )
 
     def _scan_api_abuse(self, context: AnalysisContext, lowered: str) -> None:
-        keywords = ["virtualalloc", "rtlmovememory", "writeprocessmemory", "createthread", "callbyname"]
+        keywords = [
+            "virtualalloc",
+            "rtlmovememory",
+            "writeprocessmemory",
+            "createthread",
+            "callbyname",
+        ]
         found = [keyword for keyword in keywords if keyword in lowered]
         if found:
             self._add_finding(

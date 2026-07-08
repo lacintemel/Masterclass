@@ -411,6 +411,22 @@ h2 {
   border-bottom: 0;
 }
 
+.finding-item summary {
+  display: grid;
+  gap: 7px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.finding-item summary::-webkit-details-marker {
+  display: none;
+}
+
+.finding-item summary:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 4px;
+}
+
 .finding-head,
 .ioc-item {
   grid-template-columns: minmax(0, 1fr) auto;
@@ -448,6 +464,70 @@ h2 {
 .meta-item span {
   margin: 0;
   color: var(--muted);
+}
+
+.finding-detail-grid {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid rgba(244, 239, 228, 0.12);
+  border-radius: 8px;
+  background: rgba(244, 239, 228, 0.035);
+}
+
+.finding-detail-grid section {
+  display: grid;
+  gap: 7px;
+}
+
+.finding-detail-grid h4 {
+  margin: 0;
+  color: var(--ivory);
+  font-size: 0.82rem;
+}
+
+.finding-detail-grid ul {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+}
+
+.evidence-list,
+.stream-list {
+  display: grid;
+  gap: 6px;
+}
+
+.evidence-list div,
+.stream-list div {
+  display: grid;
+  grid-template-columns: minmax(80px, 0.35fr) minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+}
+
+.stream-list div {
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+}
+
+.evidence-list span,
+.stream-list span,
+.stream-list b {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.evidence-list code,
+.stream-list code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--ivory);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.78rem;
+  white-space: pre-wrap;
 }
 
 .json-toolbar {
@@ -642,7 +722,9 @@ pre {
   .facts-grid,
   .file-ledger,
   .finding-head,
-  .ioc-item {
+  .ioc-item,
+  .evidence-list div,
+  .stream-list div {
     grid-template-columns: 1fr;
   }
 

@@ -224,12 +224,16 @@ function renderResult(result) {
   el.iocCount.textContent = String((result.iocs || []).length);
   el.yaraCount.textContent = String((result.yara_matches || []).length);
   el.downloadPdfBtn.disabled = false;
-  el.factsGrid.innerHTML = factMarkup([
+  const facts = [
     ["Type", fileInfo.file_type || "-"],
     ["MIME", fileInfo.mime_type || "-"],
     ["Duration", `${Number(result.analysis?.duration_seconds || 0).toFixed(3)}s`],
     ["SHA256", result.hashes?.sha256 || "-"],
-  ]);
+  ];
+  if (result.extra?.ole_stream_count !== undefined) {
+    facts.splice(2, 0, ["OLE streams", result.extra.ole_stream_count]);
+  }
+  el.factsGrid.innerHTML = factMarkup(facts);
   renderRiskBreakdown(risk.breakdown || {});
   renderFindings(result.findings || []);
   renderResponse(risk.breakdown || {}, result.recommendations || []);
@@ -287,18 +291,209 @@ function renderFindings(findings) {
   el.findingsList.className = "";
   el.findingsList.innerHTML = findings
     .map(
-      (finding) => `
-        <article class="finding-item">
-          <div class="finding-head">
-            <strong>${escapeHtml(finding.title)}</strong>
-            <span class="severity ${escapeHtml(finding.severity)}">${escapeHtml(finding.severity)}</span>
-          </div>
-          <p>${escapeHtml(finding.description)}</p>
-          <small>${escapeHtml(finding.analyzer)}</small>
-        </article>
+      (finding) => {
+        const guide = findingGuide(finding);
+        return `
+          <details class="finding-item">
+            <summary>
+              <div class="finding-head">
+                <strong>${escapeHtml(finding.title)}</strong>
+                <span class="severity ${escapeHtml(finding.severity)}">${escapeHtml(finding.severity)}</span>
+              </div>
+              <p>${escapeHtml(finding.description)}</p>
+              <small>${escapeHtml(finding.analyzer)}</small>
+            </summary>
+            <div class="finding-detail-grid">
+              ${findingDetailBlock("Why it matters", guide.why)}
+              ${findingDetailBlock("Possible impact", guide.impact)}
+              ${findingDetailBlock("How to validate", guide.validate)}
+              ${findingEvidenceMarkup(finding.details || {})}
+            </div>
+          </details>
+        `;
+      },
+    )
+    .join("");
+}
+
+function findingDetailBlock(title, items) {
+  const lines = Array.isArray(items) ? items : [items];
+  return `
+    <section>
+      <h4>${escapeHtml(title)}</h4>
+      <ul>${lines.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+    </section>
+  `;
+}
+
+function findingEvidenceMarkup(details) {
+  const entries = Object.entries(details).filter(([, value]) => value !== undefined && value !== null);
+  if (!entries.length) return "";
+  const streamEntries = Array.isArray(details.streams)
+    ? details.streams.filter((item) => item && typeof item === "object")
+    : [];
+  const streamList = streamEntries.length
+    ? `
+      <div class="stream-list">
+        ${streamEntries
+          .slice(0, 16)
+          .map(
+            (stream) => `
+              <div>
+                <span>${escapeHtml(stream.index ?? "-")}</span>
+                <code>${escapeHtml(stream.display_name || stream.name || "-")}</code>
+                <b>${escapeHtml(stream.size ?? "-")} bytes</b>
+              </div>
+            `,
+          )
+          .join("")}
+      </div>
+    `
+    : "";
+  const rows = entries
+    .filter(([key]) => key !== "streams")
+    .map(
+      ([key, value]) => `
+        <div>
+          <span>${escapeHtml(key)}</span>
+          <code>${escapeHtml(formatEvidenceValue(value))}</code>
+        </div>
       `,
     )
     .join("");
+  return `
+    <section class="evidence-block">
+      <h4>Evidence</h4>
+      ${streamList}
+      ${rows ? `<div class="evidence-list">${rows}</div>` : ""}
+    </section>
+  `;
+}
+
+function formatEvidenceValue(value) {
+  if (Array.isArray(value)) {
+    if (value.every((item) => ["string", "number", "boolean"].includes(typeof item))) {
+      return value.join(", ");
+    }
+    return JSON.stringify(value, null, 2);
+  }
+  if (value && typeof value === "object") {
+    return JSON.stringify(value, null, 2);
+  }
+  return String(value);
+}
+
+function findingGuide(finding) {
+  const title = String(finding.title || "").toLowerCase();
+  const details = finding.details || {};
+
+  if (title.includes("ole stream inventory")) {
+    const count = details.stream_count || "multiple";
+    return {
+      why: [
+        `The OLE stream table is the file's internal map; Didier's oledump output is based on this same structure.`,
+        `A mismatch here usually means a parser view, hidden control-character stream name, or stream/storage counting issue.`,
+      ],
+      impact: [
+        `${count} streams were exposed for inspection; macro streams and WordDocument/PowerPoint streams are the highest-value places to review.`,
+      ],
+      validate: [
+        "Compare index, size, and display_name with oledump.py output.",
+        "Inspect Macros/VBA/dir and module streams when macro findings are present.",
+      ],
+    };
+  }
+  if (title.includes("vba macros present") || title.includes("macro project")) {
+    return {
+      why: "VBA projects can run code inside Office documents and are frequently used for initial access.",
+      impact: [
+        "User interaction can trigger script execution, process launch, or payload download.",
+        "Macros can be benign in internal templates, so behavior and source must be reviewed.",
+      ],
+      validate: [
+        "Check extracted macro code for AutoOpen, Document_Open, Workbook_Open, or Presentation_Open.",
+        "Look for Shell, CreateObject, WScript.Shell, PowerShell, HTTP clients, or obfuscated strings.",
+      ],
+    };
+  }
+  if (title.includes("auto-execution")) {
+    return {
+      why: "Auto-execution names make code run when the document opens or when common Office events fire.",
+      impact: "A user may only need to open or enable content for the malicious path to start.",
+      validate: [
+        "Confirm the trigger names in the finding details.",
+        "Trace the called functions to see whether they launch processes, write files, or contact URLs.",
+      ],
+    };
+  }
+  if (title.includes("process execution") || title.includes("command text")) {
+    return {
+      why: "Office documents should rarely need to launch shell commands or living-off-the-land binaries.",
+      impact: "This can lead to code execution, downloader activity, credential theft, or lateral movement.",
+      validate: [
+        "Review the exact command keyword and surrounding macro/string context.",
+        "Treat PowerShell, mshta, rundll32, regsvr32, certutil, and cmd.exe as high-risk in documents.",
+      ],
+    };
+  }
+  if (title.includes("embedded")) {
+    return {
+      why: "Embedded payloads can hide scripts, nested documents, OLE objects, or executables inside the carrier file.",
+      impact: "The document may drop or open a second-stage file after user interaction or exploit execution.",
+      validate: [
+        "Review the embedded type, offset/name, entropy, and file signature.",
+        "Extract the embedded object in an isolated lab and analyze it separately.",
+      ],
+    };
+  }
+  if (title.includes("relationship") || title.includes("external link")) {
+    return {
+      why: "External relationships allow Office to retrieve templates, objects, or content from another location.",
+      impact: "The document can change behavior after delivery or fetch a remote payload.",
+      validate: [
+        "Review target URLs, UNC paths, file links, and relationship type.",
+        "Check proxy/DNS/mail telemetry for the extracted target.",
+      ],
+    };
+  }
+  if (title.includes("yara rule match")) {
+    return {
+      why: "A YARA hit means the file matched a known static pattern from the configured rule set.",
+      impact: "The matched rule can indicate a known malware family, exploit pattern, or suspicious structure.",
+      validate: [
+        "Review the rule namespace, tags, and matched string count.",
+        "Correlate the rule name with other findings before assigning final confidence.",
+      ],
+    };
+  }
+  if (title.includes("suspicious document author")) {
+    return {
+      why: "Generic author values are common in automated builders and sample-generation environments.",
+      impact: "Metadata alone is weak evidence, but it can support stronger macro, relationship, or payload findings.",
+      validate: [
+        "Compare author and last-modified fields with the expected sender or organization.",
+        "Do not classify as malicious from metadata alone.",
+      ],
+    };
+  }
+  if (title.includes("office exploit protocol") || title.includes("activex") || title.includes("dde")) {
+    return {
+      why: "These markers are associated with Office exploit chains or active content that can cross trust boundaries.",
+      impact: "The file may trigger payload loading, protocol handler abuse, or legacy component exploitation.",
+      validate: [
+        "Inspect the exact protocol, classid, DDE text, or ActiveX marker.",
+        "Open only in an isolated sandbox and correlate with process/network telemetry.",
+      ],
+    };
+  }
+  return {
+    why: `This ${finding.severity || "info"} finding contributed to the document's static risk assessment.`,
+    impact: "Impact depends on whether this signal combines with macros, remote content, embedded payloads, or exploit markers.",
+    validate: [
+      "Review the evidence fields and surrounding extracted text.",
+      "Correlate with IOCs, YARA matches, sender context, and sandbox behavior.",
+    ],
+  };
 }
 
 function renderResponse(breakdown, recommendations) {

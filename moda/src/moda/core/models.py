@@ -341,6 +341,7 @@ class AnalysisResult:
             "yara_matches": [m.to_dict() for m in self.yara_matches],
             "macro_code": list(self.macro_code),
             "recommendations": list(self.recommendations),
+            "extra": self.extra,
             "analysis": {
                 "timestamp": self.analysis_timestamp.isoformat(),
                 "duration_seconds": self.analysis_duration,
