@@ -3,6 +3,11 @@ from __future__ import annotations
 import io
 import zipfile
 
+try:
+    import olefile
+except ImportError:  # pragma: no cover - optional analyzer dependency
+    olefile = None
+
 from ..core.base import BaseAnalyzer
 from ..core.context import AnalysisContext
 from ..core.enums import FindingSeverity
@@ -74,7 +79,8 @@ class EmbeddedObjectAnalyzer(BaseAnalyzer):
                 offset = data.find(signature, start)
                 if offset == -1:
                     break
-                if signature == b"MZ" and not is_pe_file(data[offset:]):
+                payload = data[offset:]
+                if not self._is_valid_raw_payload(signature, payload):
                     start = offset + 1
                     continue
                 embedded.append(
@@ -87,6 +93,17 @@ class EmbeddedObjectAnalyzer(BaseAnalyzer):
                 )
                 start = offset + len(signature)
         return embedded
+
+    def _is_valid_raw_payload(self, signature: bytes, payload: bytes) -> bool:
+        if signature == b"MZ":
+            return is_pe_file(payload)
+        if signature == b"PK\x03\x04":
+            return zipfile.is_zipfile(io.BytesIO(payload))
+        if signature == b"\xD0\xCF\x11\xE0":
+            return olefile.isOleFile(payload) if olefile is not None else len(payload) > 512
+        if signature == b"%PDF":
+            return b"%%EOF" in payload[:20 * 1024 * 1024]
+        return True
 
     def _is_interesting_ooxml_part(self, name: str) -> bool:
         return (

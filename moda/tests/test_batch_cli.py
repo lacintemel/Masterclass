@@ -42,6 +42,15 @@ class BatchCLITests(unittest.TestCase):
         self.assertEqual([path.name for path in shallow], ["one.docx"])
         self.assertEqual([path.name for path in recursive], ["two.pdf", "one.docx"])
 
+    def test_discover_input_files_includes_powerpoint_show_variants(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            sample = Path(temp_dir) / "show.pps"
+            sample.write_bytes(b"\xd0\xcf\x11\xe0" + b"\x00" * 512)
+
+            files = discover_input_files(sample, recursive=False)
+
+        self.assertEqual([path.name for path in files], ["show.pps"])
+
     def test_run_batch_command_writes_jsonl(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

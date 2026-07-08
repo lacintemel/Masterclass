@@ -81,6 +81,7 @@ class AnalyzerEngineTests(unittest.TestCase):
 
         self.assertIn("errors", payload)
         self.assertEqual(payload["errors"], [])
+        self.assertIn("extra", payload)
 
 
 if __name__ == "__main__":
