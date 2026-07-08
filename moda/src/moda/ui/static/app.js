@@ -19,6 +19,7 @@ const el = {
   riskLabel: document.querySelector("#riskLabel"),
   resultTitle: document.querySelector("#resultTitle"),
   findingCount: document.querySelector("#findingCount"),
+  streamCount: document.querySelector("#streamCount"),
   iocCount: document.querySelector("#iocCount"),
   yaraCount: document.querySelector("#yaraCount"),
   downloadPdfBtn: document.querySelector("#downloadPdfBtn"),
@@ -187,6 +188,7 @@ function renderResult(result) {
     el.riskLabel.textContent = "Ready";
     el.resultTitle.textContent = "Awaiting document";
     el.findingCount.textContent = "0";
+    el.streamCount.textContent = "-";
     el.iocCount.textContent = "0";
     el.yaraCount.textContent = "0";
     el.downloadPdfBtn.disabled = true;
@@ -220,7 +222,11 @@ function renderResult(result) {
   el.riskScore.textContent = String(score);
   el.riskLabel.textContent = level;
   el.resultTitle.textContent = fileInfo.file_name || "Analysis complete";
-  el.findingCount.textContent = String((result.findings || []).length);
+  const findings = result.findings || [];
+  const riskFindingCount = findings.filter((finding) => finding.title !== "OLE Stream Inventory").length;
+  el.findingCount.textContent = String(riskFindingCount);
+  el.streamCount.textContent =
+    result.extra?.ole_stream_count !== undefined ? String(result.extra.ole_stream_count) : "-";
   el.iocCount.textContent = String((result.iocs || []).length);
   el.yaraCount.textContent = String((result.yara_matches || []).length);
   el.downloadPdfBtn.disabled = false;
@@ -235,7 +241,7 @@ function renderResult(result) {
   }
   el.factsGrid.innerHTML = factMarkup(facts);
   renderRiskBreakdown(risk.breakdown || {});
-  renderFindings(result.findings || []);
+  renderFindings(findings);
   renderResponse(risk.breakdown || {}, result.recommendations || []);
   renderYaraMatches(result.yara_matches || [], result.errors || []);
   renderIocs(result.iocs || []);
