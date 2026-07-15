@@ -1,6 +1,161 @@
 const state = {
   file: null,
   result: null,
+  lang: localStorage.getItem("moda_lang") || "en",
+  health: "checking",
+  isAnalyzing: false,
+  isPreparingPdf: false,
+};
+
+const translations = {
+  en: {
+    brandSubtitle: "Document threat analysis",
+    checkingEngine: "Checking engine",
+    engineReady: "Engine ready",
+    engineOffline: "Engine offline",
+    intake: "Intake",
+    reset: "Reset",
+    dropDocument: "Drop document",
+    acceptedTypes: "Office, RTF, or PDF",
+    yaraScan: "YARA scan",
+    analyze: "Analyze",
+    analyzing: "Analyzing",
+    selected: "Selected",
+    none: "None",
+    size: "Size",
+    ready: "Ready",
+    analysis: "Analysis",
+    awaitingDocument: "Awaiting document",
+    analysisComplete: "Analysis complete",
+    riskFindings: "Risk Findings",
+    oleStreams: "OLE Streams",
+    iocs: "IOCs",
+    yara: "YARA",
+    pdfReport: "PDF Report",
+    preparing: "Preparing",
+    type: "Type",
+    mime: "MIME",
+    duration: "Duration",
+    sha256: "SHA256",
+    noScoreContributors: "No score contributors",
+    findings: "Findings",
+    response: "Response",
+    metadata: "Metadata",
+    json: "JSON",
+    noAnalysisLoaded: "No analysis loaded",
+    noResponseLoaded: "No response guidance loaded",
+    noYaraLoaded: "No YARA matches loaded",
+    noIndicatorsLoaded: "No indicators loaded",
+    noMetadataLoaded: "No metadata loaded",
+    copyJson: "Copy JSON",
+    download: "Download",
+    noFindings: "No findings",
+    whyItMatters: "Why it matters",
+    possibleImpact: "Possible impact",
+    howToValidate: "How to validate",
+    evidence: "Evidence",
+    potentialImpact: "Potential Impact",
+    recovery: "Recovery",
+    recommendations: "Recommendations",
+    noResponseGuidance: "No response guidance",
+    noYaraMatches: "No YARA matches",
+    yaraWarning: "YARA Compile/Scan Warning",
+    yaraDefaultDescription: "YARA rule matched this file.",
+    noTags: "no tags",
+    strings: "strings",
+    noIndicators: "No indicators",
+    noMetadata: "No metadata",
+    jsonCopied: "JSON copied",
+    reportFailed: "Report failed",
+    analysisFailed: "Analysis failed",
+    risk: {
+      low: "low",
+      medium: "medium",
+      high: "high",
+      critical: "critical",
+    },
+    severity: {
+      info: "info",
+      low: "low",
+      medium: "medium",
+      high: "high",
+      critical: "critical",
+    },
+  },
+  tr: {
+    brandSubtitle: "Doküman tehdit analizi",
+    checkingEngine: "Motor kontrol ediliyor",
+    engineReady: "Motor hazır",
+    engineOffline: "Motor çevrimdışı",
+    intake: "Dosya alımı",
+    reset: "Sıfırla",
+    dropDocument: "Dokümanı bırak",
+    acceptedTypes: "Office, RTF veya PDF",
+    yaraScan: "YARA taraması",
+    analyze: "Analiz et",
+    analyzing: "Analiz ediliyor",
+    selected: "Seçilen",
+    none: "Yok",
+    size: "Boyut",
+    ready: "Hazır",
+    analysis: "Analiz",
+    awaitingDocument: "Doküman bekleniyor",
+    analysisComplete: "Analiz tamamlandı",
+    riskFindings: "Risk bulguları",
+    oleStreams: "OLE streamleri",
+    iocs: "IOC'ler",
+    yara: "YARA",
+    pdfReport: "PDF raporu",
+    preparing: "Hazırlanıyor",
+    type: "Tür",
+    mime: "MIME",
+    duration: "Süre",
+    sha256: "SHA256",
+    noScoreContributors: "Skora katkı yok",
+    findings: "Bulgular",
+    response: "Müdahale",
+    metadata: "Metadata",
+    json: "JSON",
+    noAnalysisLoaded: "Analiz yüklenmedi",
+    noResponseLoaded: "Müdahale önerisi yüklenmedi",
+    noYaraLoaded: "YARA eşleşmesi yüklenmedi",
+    noIndicatorsLoaded: "Gösterge yüklenmedi",
+    noMetadataLoaded: "Metadata yüklenmedi",
+    copyJson: "JSON kopyala",
+    download: "İndir",
+    noFindings: "Bulgu yok",
+    whyItMatters: "Neden önemli",
+    possibleImpact: "Olası etki",
+    howToValidate: "Nasıl doğrulanır",
+    evidence: "Kanıt",
+    potentialImpact: "Olası etki",
+    recovery: "Toparlanma",
+    recommendations: "Öneriler",
+    noResponseGuidance: "Müdahale önerisi yok",
+    noYaraMatches: "YARA eşleşmesi yok",
+    yaraWarning: "YARA derleme/tarama uyarısı",
+    yaraDefaultDescription: "Bu dosya bir YARA kuralıyla eşleşti.",
+    noTags: "etiket yok",
+    strings: "string",
+    noIndicators: "Gösterge yok",
+    noMetadata: "Metadata yok",
+    jsonCopied: "JSON kopyalandı",
+    reportFailed: "Rapor oluşturulamadı",
+    analysisFailed: "Analiz başarısız",
+    risk: {
+      low: "düşük",
+      medium: "orta",
+      high: "yüksek",
+      critical: "kritik",
+    },
+    severity: {
+      info: "bilgi",
+      low: "düşük",
+      medium: "orta",
+      high: "yüksek",
+      critical: "kritik",
+    },
+  },
 };
 
 const el = {
@@ -33,6 +188,7 @@ const el = {
   jsonOutput: document.querySelector("#jsonOutput"),
   copyJsonBtn: document.querySelector("#copyJsonBtn"),
   downloadJsonBtn: document.querySelector("#downloadJsonBtn"),
+  langButtons: document.querySelectorAll(".lang-btn"),
 };
 
 const riskColors = {
@@ -41,6 +197,61 @@ const riskColors = {
   high: "#bd6b44",
   critical: "#e05a47",
 };
+
+function t(key) {
+  const dictionary = translations[state.lang] || translations.en;
+  return key.split(".").reduce((value, part) => value?.[part], dictionary) ?? key;
+}
+
+function buttonMarkup(label, glyph = "") {
+  return `${glyph ? `<span aria-hidden="true">${glyph}</span>` : ""}${escapeHtml(label)}`;
+}
+
+function riskLabel(level) {
+  return t(`risk.${level}`) || level;
+}
+
+function severityLabel(severity) {
+  return t(`severity.${severity}`) || severity;
+}
+
+function renderHealth() {
+  el.healthText.textContent = t(
+    state.health === "ready"
+      ? "engineReady"
+      : state.health === "offline"
+        ? "engineOffline"
+        : "checkingEngine",
+  );
+}
+
+function applyTranslations() {
+  document.documentElement.lang = state.lang === "tr" ? "tr" : "en";
+  document.querySelector(".brand-lockup p").textContent = t("brandSubtitle");
+  document.querySelector(".panel-title span").textContent = t("intake");
+  el.resetBtn.title = t("reset");
+  document.querySelector(".switch-row span").textContent = t("yaraScan");
+  document.querySelector(".eyebrow").textContent = t("analysis");
+  const metricLabels = document.querySelectorAll(".metric-row span");
+  metricLabels[0].textContent = t("riskFindings");
+  metricLabels[1].textContent = t("oleStreams");
+  metricLabels[2].textContent = t("iocs");
+  metricLabels[3].textContent = t("yara");
+  el.copyJsonBtn.textContent = t("copyJson");
+  el.downloadJsonBtn.textContent = t("download");
+  document.querySelectorAll(".tab").forEach((button) => {
+    const key = button.dataset.tab;
+    button.textContent = key === "iocs" ? t("iocs") : t(key);
+  });
+  el.langButtons.forEach((button) => {
+    const isActive = button.dataset.lang === state.lang;
+    button.classList.toggle("is-active", isActive);
+    button.setAttribute("aria-pressed", String(isActive));
+  });
+  renderHealth();
+  setFile(state.file);
+  renderResult(state.result);
+}
 
 function formatBytes(bytes) {
   if (!Number.isFinite(bytes)) return "-";
@@ -125,21 +336,26 @@ async function checkHealth() {
   try {
     const response = await fetch("/api/health");
     if (!response.ok) throw new Error("offline");
+    state.health = "ready";
     el.healthDot.classList.add("ok");
-    el.healthText.textContent = "Engine ready";
   } catch {
+    state.health = "offline";
     el.healthDot.classList.remove("ok");
-    el.healthText.textContent = "Engine offline";
   }
+  renderHealth();
 }
 
 function setFile(file) {
   state.file = file;
-  el.analyzeBtn.disabled = !file;
-  el.dropTitle.textContent = file ? file.name : "Drop document";
-  el.dropMeta.textContent = file ? formatBytes(file.size) : "Office, RTF, or PDF";
+  el.analyzeBtn.disabled = !file || state.isAnalyzing;
+  el.analyzeBtn.innerHTML = buttonMarkup(state.isAnalyzing ? t("analyzing") : t("analyze"), "◆");
+  el.dropTitle.textContent = file ? file.name : t("dropDocument");
+  el.dropMeta.textContent = file ? formatBytes(file.size) : t("acceptedTypes");
   const rows = el.fileLedger.querySelectorAll("strong");
-  rows[0].textContent = file ? file.name : "None";
+  const labels = el.fileLedger.querySelectorAll("span");
+  labels[0].textContent = t("selected");
+  labels[1].textContent = t("size");
+  rows[0].textContent = file ? file.name : t("none");
   rows[1].textContent = file ? formatBytes(file.size) : "-";
 }
 
@@ -153,8 +369,9 @@ function reset() {
 
 async function analyze() {
   if (!state.file) return;
+  state.isAnalyzing = true;
   el.analyzeBtn.disabled = true;
-  el.analyzeBtn.textContent = "Analyzing";
+  el.analyzeBtn.textContent = t("analyzing");
 
   try {
     const params = new URLSearchParams();
@@ -169,15 +386,15 @@ async function analyze() {
     });
     const payload = await response.json();
     if (!response.ok || payload.error) {
-      throw new Error(payload.error || "Analysis failed");
+      throw new Error(payload.error || t("analysisFailed"));
     }
     state.result = payload;
     renderResult(payload);
   } catch (error) {
     toast(error.message);
   } finally {
-    el.analyzeBtn.disabled = false;
-    el.analyzeBtn.innerHTML = '<span aria-hidden="true">◆</span> Analyze';
+    state.isAnalyzing = false;
+    setFile(state.file);
   }
 }
 
@@ -185,30 +402,31 @@ function renderResult(result) {
   if (!result) {
     drawRisk(0, "low");
     el.riskScore.textContent = "--";
-    el.riskLabel.textContent = "Ready";
-    el.resultTitle.textContent = "Awaiting document";
+    el.riskLabel.textContent = t("ready");
+    el.resultTitle.textContent = t("awaitingDocument");
     el.findingCount.textContent = "0";
     el.streamCount.textContent = "-";
     el.iocCount.textContent = "0";
     el.yaraCount.textContent = "0";
     el.downloadPdfBtn.disabled = true;
+    el.downloadPdfBtn.textContent = t("pdfReport");
     el.factsGrid.innerHTML = factMarkup([
-      ["Type", "-"],
-      ["MIME", "-"],
-      ["Duration", "-"],
-      ["SHA256", "-"],
+      [t("type"), "-"],
+      [t("mime"), "-"],
+      [t("duration"), "-"],
+      [t("sha256"), "-"],
     ]);
-    el.riskBreakdown.innerHTML = '<div class="empty-state compact">No score contributors</div>';
+    el.riskBreakdown.innerHTML = `<div class="empty-state compact">${escapeHtml(t("noScoreContributors"))}</div>`;
     el.findingsList.className = "empty-state";
-    el.findingsList.textContent = "No analysis loaded";
+    el.findingsList.textContent = t("noAnalysisLoaded");
     el.responseList.className = "empty-state";
-    el.responseList.textContent = "No response guidance loaded";
+    el.responseList.textContent = t("noResponseLoaded");
     el.yaraList.className = "empty-state";
-    el.yaraList.textContent = "No YARA matches loaded";
+    el.yaraList.textContent = t("noYaraLoaded");
     el.iocList.className = "empty-state";
-    el.iocList.textContent = "No indicators loaded";
+    el.iocList.textContent = t("noIndicatorsLoaded");
     el.metadataList.className = "empty-state";
-    el.metadataList.textContent = "No metadata loaded";
+    el.metadataList.textContent = t("noMetadataLoaded");
     el.jsonOutput.textContent = "{}";
     return;
   }
@@ -220,8 +438,8 @@ function renderResult(result) {
   const components = risk.breakdown?.components || [];
   drawRisk(score, level, components);
   el.riskScore.textContent = String(score);
-  el.riskLabel.textContent = level;
-  el.resultTitle.textContent = fileInfo.file_name || "Analysis complete";
+  el.riskLabel.textContent = riskLabel(level);
+  el.resultTitle.textContent = fileInfo.file_name || t("analysisComplete");
   const findings = result.findings || [];
   const riskFindingCount = findings.filter((finding) => finding.title !== "OLE Stream Inventory").length;
   el.findingCount.textContent = String(riskFindingCount);
@@ -230,14 +448,15 @@ function renderResult(result) {
   el.iocCount.textContent = String((result.iocs || []).length);
   el.yaraCount.textContent = String((result.yara_matches || []).length);
   el.downloadPdfBtn.disabled = false;
+  el.downloadPdfBtn.textContent = state.isPreparingPdf ? t("preparing") : t("pdfReport");
   const facts = [
-    ["Type", fileInfo.file_type || "-"],
-    ["MIME", fileInfo.mime_type || "-"],
-    ["Duration", `${Number(result.analysis?.duration_seconds || 0).toFixed(3)}s`],
-    ["SHA256", result.hashes?.sha256 || "-"],
+    [t("type"), fileInfo.file_type || "-"],
+    [t("mime"), fileInfo.mime_type || "-"],
+    [t("duration"), `${Number(result.analysis?.duration_seconds || 0).toFixed(3)}s`],
+    [t("sha256"), result.hashes?.sha256 || "-"],
   ];
   if (result.extra?.ole_stream_count !== undefined) {
-    facts.splice(2, 0, ["OLE streams", result.extra.ole_stream_count]);
+    facts.splice(2, 0, [t("oleStreams"), result.extra.ole_stream_count]);
   }
   el.factsGrid.innerHTML = factMarkup(facts);
   renderRiskBreakdown(risk.breakdown || {});
@@ -258,7 +477,7 @@ function factMarkup(items) {
 function renderRiskBreakdown(breakdown) {
   const components = breakdown.components || [];
   if (!components.length) {
-    el.riskBreakdown.innerHTML = '<div class="empty-state compact">No score contributors</div>';
+    el.riskBreakdown.innerHTML = `<div class="empty-state compact">${escapeHtml(t("noScoreContributors"))}</div>`;
     return;
   }
 
@@ -291,7 +510,7 @@ function renderRiskBreakdown(breakdown) {
 function renderFindings(findings) {
   if (!findings.length) {
     el.findingsList.className = "empty-state";
-    el.findingsList.textContent = "No findings";
+    el.findingsList.textContent = t("noFindings");
     return;
   }
   el.findingsList.className = "";
@@ -304,15 +523,15 @@ function renderFindings(findings) {
             <summary>
               <div class="finding-head">
                 <strong>${escapeHtml(finding.title)}</strong>
-                <span class="severity ${escapeHtml(finding.severity)}">${escapeHtml(finding.severity)}</span>
+                <span class="severity ${escapeHtml(finding.severity)}">${escapeHtml(severityLabel(finding.severity))}</span>
               </div>
               <p>${escapeHtml(finding.description)}</p>
               <small>${escapeHtml(finding.analyzer)}</small>
             </summary>
             <div class="finding-detail-grid">
-              ${findingDetailBlock("Why it matters", guide.why)}
-              ${findingDetailBlock("Possible impact", guide.impact)}
-              ${findingDetailBlock("How to validate", guide.validate)}
+              ${findingDetailBlock(t("whyItMatters"), guide.why)}
+              ${findingDetailBlock(t("possibleImpact"), guide.impact)}
+              ${findingDetailBlock(t("howToValidate"), guide.validate)}
               ${findingEvidenceMarkup(finding.details || {})}
             </div>
           </details>
@@ -369,7 +588,7 @@ function findingEvidenceMarkup(details) {
     .join("");
   return `
     <section class="evidence-block">
-      <h4>Evidence</h4>
+      <h4>${escapeHtml(t("evidence"))}</h4>
       ${streamList}
       ${rows ? `<div class="evidence-list">${rows}</div>` : ""}
     </section>
@@ -390,6 +609,9 @@ function formatEvidenceValue(value) {
 }
 
 function findingGuide(finding) {
+  if (state.lang === "tr") {
+    return findingGuideTr(finding);
+  }
   const title = String(finding.title || "").toLowerCase();
   const details = finding.details || {};
 
@@ -502,34 +724,123 @@ function findingGuide(finding) {
   };
 }
 
+function findingGuideTr(finding) {
+  const title = String(finding.title || "").toLowerCase();
+  const details = finding.details || {};
+
+  if (title.includes("ole stream inventory")) {
+    const count = details.stream_count || "birden fazla";
+    return {
+      why: [
+        "OLE stream tablosu dosyanın iç haritasıdır; oledump çıktısı da aynı yapıya dayanır.",
+        "Buradaki uyumsuzluk gizli stream adı, parser farkı veya stream/storage sayımıyla ilgili olabilir.",
+      ],
+      impact: [
+        `${count} stream incelemeye açıldı; macro streamleri ve WordDocument/PowerPoint streamleri önceliklidir.`,
+      ],
+      validate: [
+        "Index, boyut ve display_name alanlarını oledump.py çıktısıyla karşılaştır.",
+        "Makro bulgusu varsa Macros/VBA/dir ve modül streamlerini incele.",
+      ],
+    };
+  }
+  if (title.includes("vba macros present") || title.includes("macro project")) {
+    return {
+      why: "VBA projeleri Office dokümanı içinde kod çalıştırabilir ve ilk erişim için sık kullanılır.",
+      impact: [
+        "Kullanıcı etkileşimi process başlatma, payload indirme veya script çalıştırmayı tetikleyebilir.",
+        "Makrolar kurumsal şablonlarda meşru olabilir; davranış ve kaynak birlikte değerlendirilmelidir.",
+      ],
+      validate: [
+        "AutoOpen, Document_Open, Workbook_Open veya Presentation_Open tetikleyicilerini kontrol et.",
+        "Shell, CreateObject, WScript.Shell, PowerShell, HTTP istemcisi veya obfuscation izlerini ara.",
+      ],
+    };
+  }
+  if (title.includes("auto-execution")) {
+    return {
+      why: "Auto-execution isimleri doküman açıldığında veya Office olayları tetiklendiğinde kod çalıştırabilir.",
+      impact: "Kötü amaçlı akışın başlaması için kullanıcının dosyayı açması veya içeriği etkinleştirmesi yeterli olabilir.",
+      validate: ["Tetikleyici isimlerini bulgu detaylarında doğrula.", "Çağrılan fonksiyonların dosya, process veya ağ davranışına gidip gitmediğini izle."],
+    };
+  }
+  if (title.includes("process execution") || title.includes("command text")) {
+    return {
+      why: "Office dokümanlarının shell komutu veya living-off-the-land araçları çağırması beklenen bir davranış değildir.",
+      impact: "Kod çalıştırma, downloader aktivitesi, kimlik bilgisi hırsızlığı veya yatay hareket riski doğurabilir.",
+      validate: ["Komut kelimesini ve çevresindeki macro/string bağlamını incele.", "PowerShell, mshta, rundll32, regsvr32, certutil ve cmd.exe geçişlerini yüksek riskli değerlendir."],
+    };
+  }
+  if (title.includes("embedded")) {
+    return {
+      why: "Gömülü payloadlar taşıyıcı dosyanın içinde script, nested doküman, OLE nesnesi veya çalıştırılabilir saklayabilir.",
+      impact: "Doküman kullanıcı etkileşimi veya exploit sonrası ikinci aşama dosya bırakabilir/açabilir.",
+      validate: ["Gömülü tür, offset/ad, entropy ve dosya imzasını kontrol et.", "Nesneyi izole laboratuvarda çıkarıp ayrı analiz et."],
+    };
+  }
+  if (title.includes("relationship") || title.includes("external link")) {
+    return {
+      why: "External relationship yapıları Office'in dışarıdan template, nesne veya içerik çekmesine izin verir.",
+      impact: "Dosya teslim edildikten sonra davranış değiştirebilir veya uzak payload alabilir.",
+      validate: ["URL, UNC path, file link ve ilişki türünü incele.", "Proxy, DNS ve mail telemetrisinde hedefi ara."],
+    };
+  }
+  if (title.includes("yara rule match")) {
+    return {
+      why: "YARA eşleşmesi dosyanın yapılandırılmış kural setindeki bilinen bir statik paterne uyduğunu gösterir.",
+      impact: "Kural adı bilinen aile, exploit paterni veya şüpheli yapı hakkında ipucu verebilir.",
+      validate: ["Rule namespace, tag ve eşleşen string sayısını gözden geçir.", "Son güven kararı için kuralı diğer bulgularla korele et."],
+    };
+  }
+  if (title.includes("suspicious document author")) {
+    return {
+      why: "Jenerik author değerleri otomatik builder veya örnek üretim ortamlarında sık görülür.",
+      impact: "Metadata tek başına zayıf kanıttır; macro, ilişki veya payload bulgularını destekleyebilir.",
+      validate: ["Author ve last-modified alanlarını beklenen gönderen/kurumla karşılaştır.", "Sadece metadata ile zararlı sınıflandırma yapma."],
+    };
+  }
+  if (title.includes("office exploit protocol") || title.includes("activex") || title.includes("dde")) {
+    return {
+      why: "Bu markerlar Office exploit zincirleri veya güven sınırını aşabilen aktif içerikle ilişkilidir.",
+      impact: "Dosya payload yükleme, protocol handler kötüye kullanımı veya eski bileşen istismarını tetikleyebilir.",
+      validate: ["Protocol, classid, DDE metni veya ActiveX markerını netleştir.", "Sadece izole sandbox içinde aç ve process/ağ telemetrisiyle doğrula."],
+    };
+  }
+  return {
+    why: `Bu ${severityLabel(finding.severity || "info")} bulgu statik risk değerlendirmesine katkı verdi.`,
+    impact: "Etki, sinyalin makro, uzak içerik, gömülü payload veya exploit markerlarıyla birleşip birleşmediğine bağlıdır.",
+    validate: ["Kanıt alanlarını ve çevresindeki çıkarılmış metni incele.", "IOC, YARA eşleşmesi, gönderen bağlamı ve sandbox davranışıyla korele et."],
+  };
+}
+
 function renderResponse(breakdown, recommendations) {
   const impacts = breakdown.potential_impacts || [];
   const recovery = breakdown.recovery_steps || [];
   if (!impacts.length && !recovery.length && !recommendations.length) {
     el.responseList.className = "empty-state";
-    el.responseList.textContent = "No response guidance";
+    el.responseList.textContent = t("noResponseGuidance");
     return;
   }
 
   el.responseList.className = "response-grid";
   el.responseList.innerHTML = `
     <section>
-      <h3>Potential Impact</h3>
+      <h3>${escapeHtml(t("potentialImpact"))}</h3>
       ${listMarkup(impacts)}
     </section>
     <section>
-      <h3>Recovery</h3>
+      <h3>${escapeHtml(t("recovery"))}</h3>
       ${listMarkup(recovery)}
     </section>
     <section>
-      <h3>Recommendations</h3>
+      <h3>${escapeHtml(t("recommendations"))}</h3>
       ${listMarkup(recommendations)}
     </section>
   `;
 }
 
 function listMarkup(items) {
-  if (!items.length) return '<p class="muted-line">None</p>';
+  if (!items.length) return `<p class="muted-line">${escapeHtml(t("none"))}</p>`;
   return `<ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
 }
 
@@ -537,7 +848,7 @@ function renderYaraMatches(matches, errors) {
   const yaraErrors = errors.filter((item) => String(item).toLowerCase().includes("yara"));
   if (!matches.length && !yaraErrors.length) {
     el.yaraList.className = "empty-state";
-    el.yaraList.textContent = "No YARA matches";
+    el.yaraList.textContent = t("noYaraMatches");
     return;
   }
 
@@ -545,15 +856,15 @@ function renderYaraMatches(matches, errors) {
   const matchMarkup = matches
     .map((match) => {
       const severity = match.meta?.severity || "medium";
-      const tags = Array.isArray(match.tags) && match.tags.length ? match.tags.join(", ") : "no tags";
+      const tags = Array.isArray(match.tags) && match.tags.length ? match.tags.join(", ") : t("noTags");
       return `
         <article class="finding-item">
           <div class="finding-head">
             <strong>${escapeHtml(match.rule_name)}</strong>
-            <span class="severity ${escapeHtml(severity)}">${escapeHtml(severity)}</span>
+            <span class="severity ${escapeHtml(severity)}">${escapeHtml(severityLabel(severity))}</span>
           </div>
-          <p>${escapeHtml(match.meta?.description || "YARA rule matched this file.")}</p>
-          <small>${escapeHtml(match.rule_namespace)} | ${escapeHtml(tags)} | strings: ${escapeHtml(match.strings_matched_count || 0)}</small>
+          <p>${escapeHtml(match.meta?.description || t("yaraDefaultDescription"))}</p>
+          <small>${escapeHtml(match.rule_namespace)} | ${escapeHtml(tags)} | ${escapeHtml(t("strings"))}: ${escapeHtml(match.strings_matched_count || 0)}</small>
         </article>
       `;
     })
@@ -563,8 +874,8 @@ function renderYaraMatches(matches, errors) {
       (error) => `
         <article class="finding-item">
           <div class="finding-head">
-            <strong>YARA Compile/Scan Warning</strong>
-            <span class="severity medium">medium</span>
+            <strong>${escapeHtml(t("yaraWarning"))}</strong>
+            <span class="severity medium">${escapeHtml(severityLabel("medium"))}</span>
           </div>
           <p>${escapeHtml(error)}</p>
           <small>YaraScanner</small>
@@ -578,7 +889,7 @@ function renderYaraMatches(matches, errors) {
 function renderIocs(iocs) {
   if (!iocs.length) {
     el.iocList.className = "empty-state";
-    el.iocList.textContent = "No indicators";
+    el.iocList.textContent = t("noIndicators");
     return;
   }
   el.iocList.className = "";
@@ -601,7 +912,7 @@ function renderMetadata(metadata) {
   const entries = Object.entries(metadata).filter(([, value]) => value !== null && value !== "");
   if (!entries.length) {
     el.metadataList.className = "empty-state";
-    el.metadataList.textContent = "No metadata";
+    el.metadataList.textContent = t("noMetadata");
     return;
   }
   el.metadataList.className = "";
@@ -623,6 +934,14 @@ document.querySelectorAll(".tab").forEach((button) => {
     document.querySelectorAll(".tab-panel").forEach((panel) => panel.classList.remove("is-active"));
     button.classList.add("is-active");
     document.querySelector(`#${button.dataset.tab}`).classList.add("is-active");
+  });
+});
+
+el.langButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    state.lang = button.dataset.lang === "tr" ? "tr" : "en";
+    localStorage.setItem("moda_lang", state.lang);
+    applyTranslations();
   });
 });
 
@@ -653,8 +972,9 @@ el.resetBtn.addEventListener("click", reset);
 
 el.downloadPdfBtn.addEventListener("click", async () => {
   if (!state.file || !state.result) return;
+  state.isPreparingPdf = true;
   el.downloadPdfBtn.disabled = true;
-  el.downloadPdfBtn.textContent = "Preparing";
+  el.downloadPdfBtn.textContent = t("preparing");
   try {
     const params = new URLSearchParams();
     params.set("yara", el.yaraToggle.checked ? "1" : "0");
@@ -668,7 +988,7 @@ el.downloadPdfBtn.addEventListener("click", async () => {
     });
     if (!response.ok) {
       const payload = await response.json().catch(() => ({}));
-      throw new Error(payload.error || "Report failed");
+      throw new Error(payload.error || t("reportFailed"));
     }
     const blob = await response.blob();
     const link = document.createElement("a");
@@ -679,14 +999,15 @@ el.downloadPdfBtn.addEventListener("click", async () => {
   } catch (error) {
     toast(error.message);
   } finally {
+    state.isPreparingPdf = false;
     el.downloadPdfBtn.disabled = false;
-    el.downloadPdfBtn.textContent = "PDF Report";
+    el.downloadPdfBtn.textContent = t("pdfReport");
   }
 });
 
 el.copyJsonBtn.addEventListener("click", async () => {
   await navigator.clipboard.writeText(el.jsonOutput.textContent);
-  toast("JSON copied");
+  toast(t("jsonCopied"));
 });
 
 el.downloadJsonBtn.addEventListener("click", () => {
@@ -698,5 +1019,5 @@ el.downloadJsonBtn.addEventListener("click", () => {
   URL.revokeObjectURL(link.href);
 });
 
-drawRisk(0, "low");
+applyTranslations();
 checkHealth();
