@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import json
 
-from .base import BaseReporter
 from ..core.models import AnalysisResult
+from .base import BaseReporter
 
 
 class JSONReporter(BaseReporter):

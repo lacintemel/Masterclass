@@ -5,8 +5,9 @@ import math
 from datetime import datetime
 from typing import Any
 
-from ..core.models import AnalysisResult, Finding, IOC, YaraMatch
+from ..core.models import IOC, AnalysisResult, Finding, YaraMatch
 from .base import BaseReporter
+from .view_model import build_report_view
 
 
 class _PDFDocument:
@@ -53,7 +54,9 @@ class _PDFDocument:
                 "bold",
                 self.accent,
             )
-            self._line(self.margin, self.y - 9, self.width - self.margin, self.y - 9, self.line_color)
+            self._line(
+                self.margin, self.y - 9, self.width - self.margin, self.y - 9, self.line_color
+            )
             self.y -= 30
 
     def ensure_space(self, required: float) -> None:
@@ -122,7 +125,14 @@ class _PDFDocument:
         lines = self._wrap(value_text, value_width, 8.5, "mono" if mono else "regular") or [""]
         row_height = max(20.0, (len(lines) * 11.0) + 7)
         self.ensure_space(row_height)
-        self._rect(self.margin, self.y - row_height + 5, self.content_width, row_height, self.panel, fill=True)
+        self._rect(
+            self.margin,
+            self.y - row_height + 5,
+            self.content_width,
+            row_height,
+            self.panel,
+            fill=True,
+        )
         self._text(key, self.margin + 8, self.y - 8, 8, "bold", self.muted)
         line_y = self.y - 8
         for line in lines:
@@ -173,7 +183,9 @@ class _PDFDocument:
         self.ensure_space(78)
         self._rect(self.margin, self.y - 20, 58, 20, color, fill=True)
         self._text(severity_label, self.margin + 8, self.y - 14, 8, "bold", (1, 1, 1))
-        self._text(f"{number:02d}  {display_title}", self.margin + 70, self.y - 14, 11, "bold", self.ink)
+        self._text(
+            f"{number:02d}  {display_title}", self.margin + 70, self.y - 14, 11, "bold", self.ink
+        )
         self.y -= 32
         self._text(
             f"{self._l('SOURCE', 'KAYNAK')}  {finding.analyzer}",
@@ -221,11 +233,20 @@ class _PDFDocument:
     def component(self, label: str, points: float, description: str, reasons: list[str]) -> None:
         self.ensure_space(60)
         self._text(label, self.margin, self.y, 9, "bold", self.ink)
-        self._text(f"{points:g} / 100", self.width - self.margin - 62, self.y, 8, "bold", self.muted)
+        self._text(
+            f"{points:g} / 100", self.width - self.margin - 62, self.y, 8, "bold", self.muted
+        )
         self.y -= 11
         bar_width = self.content_width
         self._rect(self.margin, self.y - 5, bar_width, 6, self.line_color, fill=True)
-        self._rect(self.margin, self.y - 5, bar_width * min(max(points, 0), 100) / 100, 6, self.accent, fill=True)
+        self._rect(
+            self.margin,
+            self.y - 5,
+            bar_width * min(max(points, 0), 100) / 100,
+            6,
+            self.accent,
+            fill=True,
+        )
         self.y -= 14
         if description:
             self.paragraph(description, size=8, leading=11, color=self.muted)
@@ -305,7 +326,11 @@ class _PDFDocument:
             stream_commands.extend(self._footer(index, page_count))
             content = "\n".join(stream_commands).encode("cp1254", errors="replace")
             objects.append(
-                b"<< /Length " + str(len(content)).encode("ascii") + b" >>\nstream\n" + content + b"\nendstream"
+                b"<< /Length "
+                + str(len(content)).encode("ascii")
+                + b" >>\nstream\n"
+                + content
+                + b"\nendstream"
             )
 
         pdf = bytearray(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
@@ -332,7 +357,9 @@ class _PDFDocument:
     def _footer(self, page_number: int, page_count: int) -> list[str]:
         y = 25
         return [
-            self._line_command(self.margin, y + 12, self.width - self.margin, y + 12, self.line_color),
+            self._line_command(
+                self.margin, y + 12, self.width - self.margin, y + 12, self.line_color
+            ),
             self._text_command(
                 self._l(
                     "MODA  |  Static analysis only - no document content was executed",
@@ -466,7 +493,9 @@ class _PDFDocument:
         r, g, b = color
         operator = "f" if fill else "S"
         paint = "rg" if fill else "RG"
-        self.page.append(f"q {r:g} {g:g} {b:g} {paint} {x:g} {y:g} {width:g} {height:g} re {operator} Q")
+        self.page.append(
+            f"q {r:g} {g:g} {b:g} {paint} {x:g} {y:g} {width:g} {height:g} re {operator} Q"
+        )
 
     def _display(self, value: object) -> str:
         if value is None:
@@ -502,8 +531,7 @@ class _PDFDocument:
             "240 /gbreve 253 /dotlessi /scedilla] >>"
         )
         return (
-            f"<< /Type /Font /Subtype /Type1 /BaseFont /{base_font} "
-            f"/Encoding {encoding} >>"
+            f"<< /Type /Font /Subtype /Type1 /BaseFont /{base_font} /Encoding {encoding} >>"
         ).encode("ascii")
 
     def _l(self, english: str, turkish: str) -> str:
@@ -511,7 +539,8 @@ class _PDFDocument:
 
     def _upper(self, text: str) -> str:
         if self.language == "tr":
-            return text.translate(str.maketrans({"i": "İ", "ı": "I"})).upper()
+            replacements: dict[str, str | int | None] = {"i": "İ", "ı": "I"}
+            return text.translate(str.maketrans(replacements)).upper()
         return text.upper()
 
 
@@ -571,8 +600,14 @@ class PDFReporter(BaseReporter):
         )
         document.section(self._l("Executive Summary", "Yönetici Özeti"))
         document.paragraph(self._executive_summary(result), size=10.5, leading=16)
+        document.key_value(
+            self._l("Analysis completeness", "Analiz bütünlüğü"),
+            self._analysis_status(str(result.extra.get("analysis_status", "complete"))),
+        )
 
-        top_findings = sorted(result.findings, key=lambda finding: finding.severity, reverse=True)[:5]
+        top_findings = sorted(result.findings, key=lambda finding: finding.severity, reverse=True)[
+            :5
+        ]
         if top_findings:
             document.label(self._l("Priority observations", "Öncelikli gözlemler"))
             for finding in top_findings:
@@ -737,15 +772,15 @@ class PDFReporter(BaseReporter):
             return
         for index, ioc in enumerate(result.iocs[: self._MAX_IOCS], start=1):
             document.ensure_space(62)
-            document.label(
-                f"{self._l('Indicator', 'Gösterge')} {index:03d} / {ioc.ioc_type.value}"
-            )
+            document.label(f"{self._l('Indicator', 'Gösterge')} {index:03d} / {ioc.ioc_type.value}")
             document.key_value(self._l("Value", "Değer"), ioc.value, mono=True)
             document.key_value(self._l("Source", "Kaynak"), ioc.source)
             document.key_value(self._l("Confidence", "Güven"), f"{ioc.confidence:.0%}")
             if ioc.context:
                 document.key_value(self._l("Context", "Bağlam"), ioc.context)
-            document.paragraph(self._ioc_explanation(ioc), size=8.5, color=document.muted, leading=12)
+            document.paragraph(
+                self._ioc_explanation(ioc), size=8.5, color=document.muted, leading=12
+            )
             document.spacer(5)
         omitted = len(result.iocs) - self._MAX_IOCS
         if omitted > 0:
@@ -868,7 +903,9 @@ class PDFReporter(BaseReporter):
             if remaining <= 0:
                 break
 
-        total_lines = sum(len(str(source).splitlines() or [str(source)]) for source in result.macro_code)
+        total_lines = sum(
+            len(str(source).splitlines() or [str(source)]) for source in result.macro_code
+        )
         if total_lines > self._MAX_MACRO_LINES:
             document.paragraph(
                 self._l(
@@ -910,6 +947,16 @@ class PDFReporter(BaseReporter):
 
     def _render_limitations(self, document: _PDFDocument, result: AnalysisResult) -> None:
         document.section(self._l("Analysis Notes and Limitations", "Analiz Notları ve Kısıtlar"))
+        view = build_report_view(result)
+        document.key_value(
+            self._l("Analysis completeness", "Analiz bütünlüğü"),
+            self._analysis_status(view["analysis_status"]),
+        )
+        if view["analyzer_statuses"]:
+            document.label(self._l("Analyzer execution", "Analizör çalıştırma durumu"))
+            for name, details in view["analyzer_statuses"].items():
+                status = details.get("status", "unknown") if isinstance(details, dict) else details
+                document.bullet(f"{name}: {status}")
         errors = result.extra.get("errors", [])
         if isinstance(errors, list) and errors:
             document.label(self._l("Non-fatal analysis errors", "Kritik olmayan analiz hataları"))
@@ -977,15 +1024,16 @@ class PDFReporter(BaseReporter):
         if not severity_text:
             severity_text = self._l("no severity-rated findings", "önem dereceli bulgu yok")
         narrative = self._risk_narrative(result)
+        status = self._analysis_status(str(result.extra.get("analysis_status", "complete")))
         if self.language == "tr":
             return (
-                f"MODA, {result.file_name} dosyasının içeriğini çalıştırmadan statik analizini tamamladı. "
+                f"MODA, {result.file_name} dosyasını içeriğini çalıştırmadan statik olarak inceledi. Analiz bütünlüğü: {status}. "
                 f"Deterministik analiz motoru {result.risk_score:g}/100 puanla {self._risk_level(result.risk_level)} "
                 f"risk seviyesi belirledi ve {severity_text} kaydetti. {narrative} Analiz sonucunda "
                 f"{len(result.iocs)} gösterge ve {len(result.yara_matches)} YARA eşleşmesi çıkarıldı."
             )
         return (
-            f"MODA completed a non-executing static analysis of {result.file_name}. "
+            f"MODA performed a non-executing static analysis of {result.file_name}. Analysis completeness: {status}. "
             f"The deterministic engine assigned a {result.risk_level.upper()} risk level with a score of "
             f"{result.risk_score:g}/100 and recorded {severity_text}. {narrative} "
             f"The analysis extracted {len(result.iocs)} indicator(s) and {len(result.yara_matches)} YARA match(es)."
@@ -1011,26 +1059,76 @@ class PDFReporter(BaseReporter):
             "low": "The configured checks did not identify high-risk static behavior, but static analysis cannot prove that the file is benign.",
             "clean": "No suspicious static behavior was recorded, but the result remains limited to the checks that were available and enabled.",
         }
-        return narratives.get(result.risk_level.lower(), "The result should be interpreted together with the detailed evidence below.")
+        return narratives.get(
+            result.risk_level.lower(),
+            "The result should be interpreted together with the detailed evidence below.",
+        )
+
+    def _analysis_status(self, status: str) -> str:
+        labels = {
+            "complete": self._l("Complete", "Tamamlandı"),
+            "partial": self._l("Partial", "Kısmi"),
+            "inconclusive": self._l("Inconclusive", "Sonuçlandırılamadı"),
+        }
+        return labels.get(status, status)
 
     def _finding_explanation(self, finding: Finding) -> str:
         lowered = f"{finding.title} {finding.description} {finding.analyzer}".lower()
         if self.language == "tr":
             why = "Bu özellik belge riskini artırabilir; kaydedilen kanıtlar ve ilişkili bulgularla birlikte incelenmelidir."
             patterns = [
-                (("unsupported file",), "Dosya MODA'nın desteklediği belge kapsamının dışındadır; bu nedenle sonuç temiz değil, belirsizdir."),
-                (("auto-execution", "auto execution"), "Otomatik bir giriş noktası belge olayı gerçekleştiğinde makro davranışını etkinleştirebilir ve açık kullanıcı etkileşimi ihtiyacını azaltabilir."),
-                (("process execution", "powershell", "cmd.exe", "shell"), "İşlem başlatma yeteneği, belgenin belge uygulaması dışında işletim sistemi araçlarını veya betikleri çalıştırmasına imkân verebilir."),
-                (("download", "xmlhttp", "winhttp"), "İndirme davranışı, teslimattan sonra ikinci aşama bir zararlı yükün veya uzak betiğin alınmasını sağlayabilir."),
-                (("obfuscat", "encoded"), "Gizleme teknikleri manuel incelemeyi zorlaştırır; komutları, URL'leri veya zararlı yük içeriğini basit tarayıcılardan saklayabilir."),
-                (("native api", "virtualalloc", "writeprocessmemory"), "Yerel bellek ve işlem API'leri sıklıkla bellek içi yükleyiciler ve kod enjeksiyonu teknikleriyle ilişkilidir."),
-                (("remote", "external relationship", "template"), "Harici ilişkiler belgenin başka bir konumdan içerik almasına ve teslimattan sonra davranışını değiştirmesine neden olabilir."),
-                (("embedded", "activex", "objectpool", "ole object", "package"), "Gömülü içerik, sıradan görünen bir belgenin içinde ikincil dosyaları, etkin denetimleri veya zararlı yükleri gizleyebilir."),
-                (("pdf", "javascript", "openaction", "launch action"), "Etkin PDF eylemleri belge açıldığında veya belgeyle etkileşime girildiğinde betik ya da başlatma davranışı çalıştırabilir."),
-                (("rtf", "equation", "exploit"), "RTF nesneleri ve eski bileşen işaretleri, güvenlik açığı bulunan belge işleme yazılımlarında istismar yolları oluşturabilir."),
-                (("macro", "vba"), "Makro kodu meşru görevleri otomatikleştirebilir; ancak etkinleştirildiğinde komut çalıştırabilir, dosyaları değiştirebilir veya uzak içerik alabilir."),
-                (("dde",), "Dinamik Veri Alışverişi, belge alanları ve bağlantıları üzerinden harici uygulamaları veya komutları çağırabilir."),
-                (("yara",), "Dosya içeriği bir imzayla eşleşti. Eşleşme kesin karar olarak değerlendirilmeden önce kural metadatası ve diğer bulgular incelenmelidir."),
+                (
+                    ("unsupported file",),
+                    "Dosya MODA'nın desteklediği belge kapsamının dışındadır; bu nedenle sonuç temiz değil, belirsizdir.",
+                ),
+                (
+                    ("auto-execution", "auto execution"),
+                    "Otomatik bir giriş noktası belge olayı gerçekleştiğinde makro davranışını etkinleştirebilir ve açık kullanıcı etkileşimi ihtiyacını azaltabilir.",
+                ),
+                (
+                    ("process execution", "powershell", "cmd.exe", "shell"),
+                    "İşlem başlatma yeteneği, belgenin belge uygulaması dışında işletim sistemi araçlarını veya betikleri çalıştırmasına imkân verebilir.",
+                ),
+                (
+                    ("download", "xmlhttp", "winhttp"),
+                    "İndirme davranışı, teslimattan sonra ikinci aşama bir zararlı yükün veya uzak betiğin alınmasını sağlayabilir.",
+                ),
+                (
+                    ("obfuscat", "encoded"),
+                    "Gizleme teknikleri manuel incelemeyi zorlaştırır; komutları, URL'leri veya zararlı yük içeriğini basit tarayıcılardan saklayabilir.",
+                ),
+                (
+                    ("native api", "virtualalloc", "writeprocessmemory"),
+                    "Yerel bellek ve işlem API'leri sıklıkla bellek içi yükleyiciler ve kod enjeksiyonu teknikleriyle ilişkilidir.",
+                ),
+                (
+                    ("remote", "external relationship", "template"),
+                    "Harici ilişkiler belgenin başka bir konumdan içerik almasına ve teslimattan sonra davranışını değiştirmesine neden olabilir.",
+                ),
+                (
+                    ("embedded", "activex", "objectpool", "ole object", "package"),
+                    "Gömülü içerik, sıradan görünen bir belgenin içinde ikincil dosyaları, etkin denetimleri veya zararlı yükleri gizleyebilir.",
+                ),
+                (
+                    ("pdf", "javascript", "openaction", "launch action"),
+                    "Etkin PDF eylemleri belge açıldığında veya belgeyle etkileşime girildiğinde betik ya da başlatma davranışı çalıştırabilir.",
+                ),
+                (
+                    ("rtf", "equation", "exploit"),
+                    "RTF nesneleri ve eski bileşen işaretleri, güvenlik açığı bulunan belge işleme yazılımlarında istismar yolları oluşturabilir.",
+                ),
+                (
+                    ("macro", "vba"),
+                    "Makro kodu meşru görevleri otomatikleştirebilir; ancak etkinleştirildiğinde komut çalıştırabilir, dosyaları değiştirebilir veya uzak içerik alabilir.",
+                ),
+                (
+                    ("dde",),
+                    "Dinamik Veri Alışverişi, belge alanları ve bağlantıları üzerinden harici uygulamaları veya komutları çağırabilir.",
+                ),
+                (
+                    ("yara",),
+                    "Dosya içeriği bir imzayla eşleşti. Eşleşme kesin karar olarak değerlendirilmeden önce kural metadatası ve diğer bulgular incelenmelidir.",
+                ),
             ]
             for tokens, explanation in patterns:
                 if any(token in lowered for token in tokens):
@@ -1044,19 +1142,58 @@ class PDFReporter(BaseReporter):
 
         why = "This characteristic can increase document risk and should be reviewed together with the recorded evidence and surrounding findings."
         patterns = [
-            (("unsupported file",), "The file is outside MODA's supported document scope, so the result is inconclusive rather than clean."),
-            (("auto-execution", "auto execution"), "An automatic entry point can activate macro behavior when a document event occurs, reducing the amount of explicit user action required."),
-            (("process execution", "powershell", "cmd.exe", "shell"), "Process-launch capability can allow a document to start operating-system tools or scripts outside the document application."),
-            (("download", "xmlhttp", "winhttp"), "Downloader-related behavior can retrieve a second-stage payload or remote script after delivery."),
-            (("obfuscat", "encoded"), "Obfuscation makes manual inspection harder and can conceal commands, URLs, or payload material from simple scanners."),
-            (("native api", "virtualalloc", "writeprocessmemory"), "Native memory and process APIs are frequently associated with in-memory loaders and code-injection techniques."),
-            (("remote", "external relationship", "template"), "External relationships can cause a document to retrieve content from another location and change behavior after delivery."),
-            (("embedded", "activex", "objectpool", "ole object", "package"), "Embedded content can hide secondary files, active controls, or payloads inside an otherwise ordinary-looking document."),
-            (("pdf", "javascript", "openaction", "launch action"), "Active PDF actions can run script or launch behavior when the document is opened or interacted with."),
-            (("rtf", "equation", "exploit"), "RTF objects and legacy component markers may expose exploit paths in vulnerable document-processing software."),
-            (("macro", "vba"), "Macro code can automate legitimate tasks, but it can also execute commands, modify files, or retrieve remote content when enabled."),
-            (("dde",), "Dynamic Data Exchange can invoke external applications or commands through document fields and links."),
-            (("yara",), "A signature matched content in the file. The rule metadata and other findings should be reviewed before treating the match as a verdict."),
+            (
+                ("unsupported file",),
+                "The file is outside MODA's supported document scope, so the result is inconclusive rather than clean.",
+            ),
+            (
+                ("auto-execution", "auto execution"),
+                "An automatic entry point can activate macro behavior when a document event occurs, reducing the amount of explicit user action required.",
+            ),
+            (
+                ("process execution", "powershell", "cmd.exe", "shell"),
+                "Process-launch capability can allow a document to start operating-system tools or scripts outside the document application.",
+            ),
+            (
+                ("download", "xmlhttp", "winhttp"),
+                "Downloader-related behavior can retrieve a second-stage payload or remote script after delivery.",
+            ),
+            (
+                ("obfuscat", "encoded"),
+                "Obfuscation makes manual inspection harder and can conceal commands, URLs, or payload material from simple scanners.",
+            ),
+            (
+                ("native api", "virtualalloc", "writeprocessmemory"),
+                "Native memory and process APIs are frequently associated with in-memory loaders and code-injection techniques.",
+            ),
+            (
+                ("remote", "external relationship", "template"),
+                "External relationships can cause a document to retrieve content from another location and change behavior after delivery.",
+            ),
+            (
+                ("embedded", "activex", "objectpool", "ole object", "package"),
+                "Embedded content can hide secondary files, active controls, or payloads inside an otherwise ordinary-looking document.",
+            ),
+            (
+                ("pdf", "javascript", "openaction", "launch action"),
+                "Active PDF actions can run script or launch behavior when the document is opened or interacted with.",
+            ),
+            (
+                ("rtf", "equation", "exploit"),
+                "RTF objects and legacy component markers may expose exploit paths in vulnerable document-processing software.",
+            ),
+            (
+                ("macro", "vba"),
+                "Macro code can automate legitimate tasks, but it can also execute commands, modify files, or retrieve remote content when enabled.",
+            ),
+            (
+                ("dde",),
+                "Dynamic Data Exchange can invoke external applications or commands through document fields and links.",
+            ),
+            (
+                ("yara",),
+                "A signature matched content in the file. The rule metadata and other findings should be reviewed before treating the match as a verdict.",
+            ),
         ]
         for tokens, explanation in patterns:
             if any(token in lowered for token in tokens):
@@ -1087,15 +1224,19 @@ class PDFReporter(BaseReporter):
             elif "hash" in ioc_type:
                 meaning = "Bu özet değer, dosya adlarına bağlı kalmadan eşleşen dosyaları belirlemek için kullanılabilir."
             elif "path" in ioc_type or "file" in ioc_type:
-                meaning = "Bu yol veya dosya adı uç nokta ve dosya sistemi telemetrisinde aranabilir."
+                meaning = (
+                    "Bu yol veya dosya adı uç nokta ve dosya sistemi telemetrisinde aranabilir."
+                )
             elif "command" in ioc_type:
                 meaning = "Bu komut metni işlem oluşturma, betik ve komut satırı telemetrisinde aranabilir."
             else:
                 meaning = "Bu değer tehdit avcılığı ve manuel inceleme sırasında başlangıç noktası olarak kullanılabilir."
-            defanged = " Değer başlangıçta etkisizleştirilmiş gösterimle kaydedildi." if ioc.defanged else ""
-            return (
-                f"Analist yorumu: {meaning}{defanged} Engelleme uygulamadan önce bağlamı ve itibarı doğrulayın."
+            defanged = (
+                " Değer başlangıçta etkisizleştirilmiş gösterimle kaydedildi."
+                if ioc.defanged
+                else ""
             )
+            return f"Analist yorumu: {meaning}{defanged} Engelleme uygulamadan önce bağlamı ve itibarı doğrulayın."
         if "url" in ioc_type or "domain" in ioc_type:
             meaning = "This network destination can be searched in proxy, DNS, email, and endpoint telemetry."
         elif "ip" in ioc_type:
@@ -1103,12 +1244,16 @@ class PDFReporter(BaseReporter):
         elif "hash" in ioc_type:
             meaning = "This hash can identify matching files without relying on their names."
         elif "path" in ioc_type or "file" in ioc_type:
-            meaning = "This path or filename can be used to search endpoint and file-system telemetry."
+            meaning = (
+                "This path or filename can be used to search endpoint and file-system telemetry."
+            )
         elif "command" in ioc_type:
             meaning = "This command text can be searched in process-creation, script, and command-line telemetry."
         else:
             meaning = "This value can be used as a pivot during threat hunting and manual review."
-        defanged = " The value was originally recorded in defanged notation." if ioc.defanged else ""
+        defanged = (
+            " The value was originally recorded in defanged notation." if ioc.defanged else ""
+        )
         return f"Analyst interpretation: {meaning}{defanged} Validate context and reputation before blocking."
 
     def _flatten(
@@ -1308,13 +1453,20 @@ class PDFReporter(BaseReporter):
             "Legacy PowerPoint binary content contains OLE, ActiveX, DDE, or package markers.": "Eski PowerPoint ikili içeriği OLE, ActiveX, DDE veya paket işaretleri içeriyor.",
         }
         if finding.description.startswith("Detected embedded "):
-            embedded = finding.description.removeprefix("Detected embedded ").removesuffix(" content.")
+            embedded = finding.description.removeprefix("Detected embedded ").removesuffix(
+                " content."
+            )
             return f"Gömülü {embedded} içeriği algılandı."
-        if finding.description.startswith("PDF contains ") and " occurrence(s) of " in finding.description:
+        if (
+            finding.description.startswith("PDF contains ")
+            and " occurrence(s) of " in finding.description
+        ):
             count_and_keyword = finding.description.removeprefix("PDF contains ")
             count, keyword = count_and_keyword.split(" occurrence(s) of ", 1)
             return f"PDF, {keyword} ifadesinden {count} adet içeriyor."
-        if finding.description.startswith("Found ") and finding.description.endswith(" embedded objects"):
+        if finding.description.startswith("Found ") and finding.description.endswith(
+            " embedded objects"
+        ):
             count = finding.description.removeprefix("Found ").removesuffix(" embedded objects")
             return f"{count} gömülü nesne bulundu."
         if finding.description.startswith("File extension '"):
@@ -1325,11 +1477,15 @@ class PDFReporter(BaseReporter):
             return "RTF şüpheli bir nesne veya sınıf işaretine başvuruyor."
         if finding.description.startswith("OLE container exposes "):
             return "OLE kapsayıcısı statik inceleme için birden fazla veri akışı sunuyor."
-        if finding.description.startswith("OLE container includes encrypted Office package streams"):
+        if finding.description.startswith(
+            "OLE container includes encrypted Office package streams"
+        ):
             return "OLE kapsayıcısı şifrelenmiş Office paket akışları içeriyor; statik içerik incelemesi sınırlı olabilir."
         if finding.description.startswith("Stream names reference Equation Editor"):
             return "Akış adları, kötü amaçlı belgelerde kötüye kullanılan Equation Editor veya DDE davranışına başvuruyor."
-        if finding.description.startswith("Legacy PowerPoint binary content references protocol handlers"):
+        if finding.description.startswith(
+            "Legacy PowerPoint binary content references protocol handlers"
+        ):
             return "Eski PowerPoint ikili içeriği Office istismar zincirleriyle ilişkili protokol işleyicilerine başvuruyor."
         if finding.description.startswith("Legacy PowerPoint binary content references commands"):
             return "Eski PowerPoint ikili içeriği kötü amaçlı belgelerde sıklıkla kullanılan komutlara başvuruyor."
@@ -1422,6 +1578,8 @@ class PDFReporter(BaseReporter):
         }.get(key, key)
 
     def _number(self, value: object) -> float:
+        if not isinstance(value, (str, bytes, int, float)):
+            return 0.0
         try:
             number = float(value)
         except (TypeError, ValueError):

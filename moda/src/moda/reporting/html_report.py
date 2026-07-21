@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import html
 
-from .base import BaseReporter
 from ..core.models import AnalysisResult
+from .base import BaseReporter
+from .view_model import build_report_view
 
 
 class HTMLReporter(BaseReporter):
@@ -13,6 +14,7 @@ class HTMLReporter(BaseReporter):
     file_extension = ".html"
 
     def generate(self, result: AnalysisResult) -> str:
+        view = build_report_view(result)
         findings = "\n".join(self._finding_row(finding.to_dict()) for finding in result.findings)
         iocs = "\n".join(self._ioc_row(ioc.to_dict()) for ioc in result.iocs)
         metadata = "\n".join(
@@ -21,6 +23,13 @@ class HTMLReporter(BaseReporter):
         recommendations = "\n".join(
             f"<li>{html.escape(item)}</li>" for item in result.recommendations
         )
+        analyzer_rows = "\n".join(
+            self._kv_row(
+                name, details.get("status", "unknown") if isinstance(details, dict) else details
+            )
+            for name, details in view["analyzer_statuses"].items()
+        )
+        error_items = "\n".join(f"<li>{html.escape(str(item))}</li>" for item in view["errors"])
 
         return f"""<!doctype html>
 <html lang="en">
@@ -103,6 +112,7 @@ class HTMLReporter(BaseReporter):
         <div class="metric"><span>Findings</span><strong>{len(result.findings)}</strong></div>
         <div class="metric"><span>IOCs</span><strong>{len(result.iocs)}</strong></div>
       </div>
+      <p class="subtitle">Analysis completeness: <strong>{html.escape(view["analysis_status"].upper())}</strong></p>
     </header>
     <section>
       <h2>File</h2>
@@ -137,6 +147,11 @@ class HTMLReporter(BaseReporter):
     <section>
       <h2>Recommendations</h2>
       <ul>{recommendations}</ul>
+    </section>
+    <section>
+      <h2>Analyzer Execution</h2>
+      <table>{analyzer_rows or '<tr><td class="muted">No execution data</td></tr>'}</table>
+      {f"<h2>Warnings / Errors</h2><ul>{error_items}</ul>" if error_items else ""}
     </section>
   </main>
 </body>
