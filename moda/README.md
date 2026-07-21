@@ -329,6 +329,16 @@ python send_test_mail.py suspicious
 python send_test_mail.py malicious
 ```
 
+To submit an existing attachment to a gateway on another host, pass an absolute
+path and the gateway address:
+
+```bash
+python send_test_mail.py --file "/absolute/path/to/sample.docx" --host 192.168.228.135
+```
+
+Use suspect files only in an isolated lab. The sender reads the attachment as
+bytes and does not open it, but the file should not be previewed or executed.
+
 Expected behavior:
 
 | Test | SMTP result | Mailpit | Quarantine |
