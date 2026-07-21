@@ -60,9 +60,7 @@ class UnsupportedFileTypeError(MODAError):
     ) -> None:
         self.file_path = Path(file_path)
         self.detected_type = detected_type
-        super().__init__(
-            f"Unsupported file type '{detected_type}' for file: {self.file_path}"
-        )
+        super().__init__(f"Unsupported file type '{detected_type}' for file: {self.file_path}")
 
 
 class ConfigurationError(MODAError):

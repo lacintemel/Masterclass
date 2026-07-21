@@ -16,7 +16,7 @@ from typing import Any
 
 from moda.core.enums import FileType, RiskLevel
 from moda.core.limits import AnalysisLimits
-from moda.core.models import AnalysisResult, Finding, IOC, YaraMatch
+from moda.core.models import IOC, AnalysisResult, Finding, YaraMatch
 from moda.utils.file_utils import extract_strings
 
 logger = logging.getLogger(__name__)
@@ -204,6 +204,17 @@ class AnalysisContext:
 
     def _build_recommendations(self) -> tuple[str, ...]:
         """Generate concise analyst guidance from the final risk level."""
+        analysis_status = self.extra.get("analysis_status")
+        if analysis_status == "inconclusive":
+            return (
+                "Do not interpret this result as clean; one or more required checks could not finish.",
+                "Keep the file quarantined and repeat analysis with appropriate limits or tooling.",
+            )
+        if analysis_status == "partial":
+            return (
+                "Review the analyzer status table before relying on the risk level.",
+                "Repeat unavailable or failed checks before releasing an untrusted document.",
+            )
         if self.risk_level in {RiskLevel.HIGH, RiskLevel.CRITICAL}:
             return (
                 "Do not open the document on a workstation.",

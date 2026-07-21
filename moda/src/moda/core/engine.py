@@ -3,22 +3,23 @@ from __future__ import annotations
 import logging
 import time
 from pathlib import Path
-from typing import List
 
-from .context import AnalysisContext
-from .models import AnalysisResult
+from ..utils.file_utils import safe_read_file
 from .base import BaseAnalyzer
+from .context import AnalysisContext
 from .exceptions import AnalyzerError, FileTooLargeError, ResourceLimitError
 from .limits import AnalysisLimits
-from ..utils.file_utils import safe_read_file
+from .models import AnalysisResult
 
 logger = logging.getLogger(__name__)
+
 
 class AnalyzerEngine:
     """
     Pipeline orchestrator for MODA.
     Manages the analysis lifecycle: file input -> context -> analyzers -> result.
     """
+
     def __init__(
         self,
         skip_yara: bool = False,
@@ -28,7 +29,7 @@ class AnalyzerEngine:
         rules_dir: str | Path | None = None,
         scoring_config: str | Path | None = None,
     ):
-        self.analyzers: List[BaseAnalyzer] = []
+        self.analyzers: list[BaseAnalyzer] = []
         self.skip_yara = skip_yara
         self.max_file_size_mb = max_file_size_mb
         self.limits = limits or AnalysisLimits.for_file_size_mb(max_file_size_mb)
@@ -45,36 +46,43 @@ class AnalyzerEngine:
     def _build_default_pipeline(self) -> None:
         """Build the default analysis pipeline in correct order."""
         from ..analyzers import (
-            FileTypeDetector, HashGenerator, MetadataAnalyzer, 
-            OLEAnalyzer, OOXMLAnalyzer, RTFAnalyzer, PDFAnalyzer,
-            MacroAnalyzer, EmbeddedObjectAnalyzer, RelationshipAnalyzer
+            EmbeddedObjectAnalyzer,
+            FileTypeDetector,
+            HashGenerator,
+            MacroAnalyzer,
+            MetadataAnalyzer,
+            OLEAnalyzer,
+            OOXMLAnalyzer,
+            PDFAnalyzer,
+            RelationshipAnalyzer,
+            RTFAnalyzer,
         )
         from ..intelligence import IOCExtractor, YaraScanner
         from ..scoring import RiskScorer
-        
+
         # Stage 1-2: Triage
         self.register_analyzer(FileTypeDetector())
         self.register_analyzer(HashGenerator())
-        
+
         # Stage 3-4: Structure
         self.register_analyzer(MetadataAnalyzer())
         self.register_analyzer(OLEAnalyzer())
         self.register_analyzer(OOXMLAnalyzer())
         self.register_analyzer(RTFAnalyzer())
         self.register_analyzer(PDFAnalyzer())
-        
+
         # Stage 5-7: Content
         self.register_analyzer(MacroAnalyzer())
         self.register_analyzer(EmbeddedObjectAnalyzer())
         self.register_analyzer(RelationshipAnalyzer())
-        
+
         # Stage 8-9: Intelligence
         self.register_analyzer(IOCExtractor())
         if self.skip_yara:
             self.disabled_analyzers["YaraScanner"] = "disabled_by_user"
         else:
             self.register_analyzer(YaraScanner(rules_dir=self.rules_dir))
-        
+
         # Stage 10: Output
         self.register_analyzer(RiskScorer(config_path=self.scoring_config))
 
@@ -90,10 +98,10 @@ class AnalyzerEngine:
         file_size = file_path.stat().st_size
         if file_size > max_bytes:
             raise FileTooLargeError(file_path, file_size, max_bytes)
-        
+
         start_time = time.time()
         file_bytes = safe_read_file(file_path, max_size_bytes=max_bytes)
-        
+
         # 1. Create context
         context = AnalysisContext(
             file_path=file_path,
@@ -101,16 +109,16 @@ class AnalyzerEngine:
             limits=self.limits,
         )
         context.extra["analysis_id"] = context.file_hash[:24]
-        
+
         # 2. Run pipeline
         self._run_pipeline(context)
 
         self._finalize_analysis_status(context)
-        
+
         # 3. Finalize and return
         context.analysis_end = time.time()
         logger.info(f"Analysis complete in {context.analysis_end - start_time:.2f}s")
-        
+
         return context.to_result()
 
     def _run_pipeline(self, context: AnalysisContext) -> None:
@@ -171,11 +179,11 @@ class AnalyzerEngine:
     def _finalize_analysis_status(self, context: AnalysisContext) -> None:
         statuses = context.extra.get("analyzer_statuses", {})
         status_values = {
-            str(item.get("status"))
-            for item in statuses.values()
-            if isinstance(item, dict)
+            str(item.get("status")) for item in statuses.values() if isinstance(item, dict)
         }
-        if context.extra.get("unsupported_file_type") or context.extra.get("resource_limit_exceeded"):
+        if context.extra.get("unsupported_file_type") or context.extra.get(
+            "resource_limit_exceeded"
+        ):
             status = "inconclusive"
         elif status_values.intersection({"failed", "disabled_by_user", "unavailable", "partial"}):
             status = "partial"

@@ -21,7 +21,7 @@ from typing import Any
 from moda.core.context import AnalysisContext
 from moda.core.enums import FindingSeverity, IOCType
 from moda.core.exceptions import AnalyzerError, ResourceLimitError
-from moda.core.models import Finding, IOC
+from moda.core.models import IOC, Finding
 
 
 class BaseAnalyzer(ABC):
@@ -36,8 +36,6 @@ class BaseAnalyzer(ABC):
         config: Arbitrary keyword configuration forwarded to subclass.
     """
 
-    description: str = "Abstract base analyzer"
-
     def __init__(self, name: str | None = None, **config: Any) -> None:
         self._name: str = name or self.__class__.__name__
         self.config: dict[str, Any] = config
@@ -49,6 +47,11 @@ class BaseAnalyzer(ABC):
     def name(self) -> str:
         """Human-friendly analyzer name."""
         return self._name
+
+    @property
+    def description(self) -> str:
+        """Human-readable summary of the analyzer's purpose."""
+        return "Abstract base analyzer"
 
     # ------------------------------------------------------------------
     # Lifecycle hooks
@@ -92,7 +95,8 @@ class BaseAnalyzer(ABC):
         """
         if not self.can_run(context):
             self.logger.debug(
-                "Skipping %s — can_run returned False", self.name,
+                "Skipping %s — can_run returned False",
+                self.name,
             )
             return context
 
@@ -112,7 +116,9 @@ class BaseAnalyzer(ABC):
         finally:
             elapsed = time.perf_counter() - start
             self.logger.info(
-                "%s completed in %.3f s", self.name, elapsed,
+                "%s completed in %.3f s",
+                self.name,
+                elapsed,
             )
         return context
 

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from pathlib import Path
 from threading import Lock
+from typing import Any
 
 try:
     import yara
@@ -13,16 +15,17 @@ from ..core.context import AnalysisContext
 from ..core.models import YaraMatch
 from ..utils.config_loader import get_rules_dir
 
+
 class YaraScanner(BaseAnalyzer):
     _cache: dict[
         tuple[str, tuple[tuple[str, int, int], ...]],
-        tuple[list[tuple[str, object]], list[str]],
+        tuple[list[tuple[str, Any]], list[str]],
     ] = {}
     _cache_lock = Lock()
 
     def __init__(self, rules_dir: str | Path | None = None):
         super().__init__()
-        self.rules: list[tuple[str, object]] = []
+        self.rules: list[tuple[str, Any]] = []
         self.compile_errors: list[str] = []
         self.rules_root = Path(rules_dir).resolve() if rules_dir else get_rules_dir()
         self._compile_rules()
@@ -30,7 +33,7 @@ class YaraScanner(BaseAnalyzer):
     @property
     def name(self) -> str:
         return "YaraScanner"
-        
+
     @property
     def description(self) -> str:
         return "Scans document against YARA rules."
@@ -70,7 +73,8 @@ class YaraScanner(BaseAnalyzer):
             self._cache[cache_key] = (list(self.rules), list(self.compile_errors))
 
     def _iter_rule_files(self, rules_root: Path) -> list[Path]:
-        rule_files: list[Path] = []
+        rule_files: list[Path] = list(rules_root.glob("*.yar"))
+        rule_files.extend(rules_root.glob("*.yara"))
         for rules_dir in (
             rules_root / "official",
             rules_root / "custom",
@@ -96,7 +100,9 @@ class YaraScanner(BaseAnalyzer):
             return
         if not self.rules:
             if self.compile_errors:
-                context.errors.extend(f"YARA compile error: {error}" for error in self.compile_errors)
+                context.errors.extend(
+                    f"YARA compile error: {error}" for error in self.compile_errors
+                )
                 overrides[self.name] = "failed"
             else:
                 overrides[self.name] = "unavailable"
@@ -116,7 +122,7 @@ class YaraScanner(BaseAnalyzer):
                         rule_namespace=m.namespace or namespace,
                         tags=m.tags,
                         strings_matched=self._extract_strings(m.strings),
-                        meta=m.meta
+                        meta=m.meta,
                     )
                     context.add_yara_match(ym)
                     self._add_finding(
@@ -137,7 +143,7 @@ class YaraScanner(BaseAnalyzer):
             context.errors.append(f"YARA scanning error: {e}")
             overrides[self.name] = "failed"
 
-    def _extract_strings(self, matches: object) -> tuple[tuple[int, str, bytes], ...]:
+    def _extract_strings(self, matches: Iterable[Any]) -> tuple[tuple[int, str, bytes], ...]:
         extracted: list[tuple[int, str, bytes]] = []
         for index, match in enumerate(matches):
             if isinstance(match, tuple) and len(match) >= 3:

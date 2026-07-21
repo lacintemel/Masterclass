@@ -4,7 +4,7 @@ from moda.core.base import BaseAnalyzer
 from moda.core.context import AnalysisContext
 from moda.core.enums import FileType, FindingSeverity, IOCType, RiskLevel
 from moda.core.exceptions import AnalyzerError, MODAError
-from moda.core.models import AnalysisResult, Finding, IOC, YaraMatch
+from moda.core.models import IOC, AnalysisResult, Finding, YaraMatch
 
 __all__ = [
     "AnalysisResult",
@@ -20,4 +20,3 @@ __all__ = [
     "IOC",
     "YaraMatch",
 ]
-
