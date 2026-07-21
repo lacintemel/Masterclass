@@ -5,6 +5,7 @@ import importlib.util
 import json
 import sys
 import logging
+import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -17,6 +18,7 @@ if TYPE_CHECKING:
 
 SUPPORTED_EXTENSIONS = {
     ".doc",
+    ".dot",
     ".xls",
     ".ppt",
     ".pps",
@@ -24,8 +26,16 @@ SUPPORTED_EXTENSIONS = {
     ".ppa",
     ".docx",
     ".docm",
+    ".dotx",
+    ".dotm",
     ".xlsx",
     ".xlsm",
+    ".xlsb",
+    ".xla",
+    ".xlt",
+    ".xlam",
+    ".xltx",
+    ".xltm",
     ".pptx",
     ".pptm",
     ".ppsx",
@@ -44,7 +54,12 @@ def run_ui_command(argv: list[str]) -> None:
     parser.add_argument("--port", type=int, default=8765, help="Port to listen on")
     parser.add_argument("--no-yara", action="store_true", help="Skip YARA scanning")
     parser.add_argument("--max-size", type=int, default=100, help="Maximum file size in MB")
+    parser.add_argument("--rules", help="Path to custom YARA rules directory")
+    parser.add_argument("--config", help="Path to scoring YAML configuration")
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable request logging")
+    parser.add_argument("--allow-remote", action="store_true", help="Allow a non-loopback bind")
+    parser.add_argument("--token", help="Remote UI access token (or MODA_UI_TOKEN)")
+    parser.add_argument("--max-concurrent", type=int, default=2, help="Maximum simultaneous analyses")
     args = parser.parse_args(argv)
 
     from .ui.server import run_ui
@@ -55,6 +70,9 @@ def run_ui_command(argv: list[str]) -> None:
         skip_yara=args.no_yara,
         max_size_mb=args.max_size,
         verbose=args.verbose,
+        allow_remote=args.allow_remote,
+        access_token=args.token or os.environ.get("MODA_UI_TOKEN"),
+        max_concurrent_analyses=args.max_concurrent,
     )
 
 
@@ -71,7 +89,12 @@ def run_batch_command(argv: list[str]) -> None:
 
     target = Path(args.path)
     files = discover_input_files(target, recursive=args.recursive)
-    engine = AnalyzerEngine(skip_yara=args.no_yara, max_file_size_mb=args.max_size)
+    engine = AnalyzerEngine(
+        skip_yara=args.no_yara,
+        max_file_size_mb=args.max_size,
+        rules_dir=args.rules,
+        scoring_config=args.config,
+    )
 
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -242,7 +265,12 @@ def main() -> None:
     setup_logging(args.verbose)
 
     try:
-        engine = AnalyzerEngine(skip_yara=args.no_yara, max_file_size_mb=args.max_size)
+        engine = AnalyzerEngine(
+            skip_yara=args.no_yara,
+            max_file_size_mb=args.max_size,
+            rules_dir=args.rules,
+            scoring_config=args.config,
+        )
         result = engine.analyze_file(args.file)
         
         reporter = build_reporter(args.format, use_color=not args.no_color)

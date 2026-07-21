@@ -48,65 +48,59 @@ severity_weights:
 # Per-category multipliers that amplify or dampen the impact of findings
 # from specific analyzer categories.
 category_weights:
-  macros: 1.5
-  embedded_objects: 1.3
+  macro: 1.5
+  embedded: 1.3
   metadata: 0.8
-  urls: 1.2
-  obfuscation: 1.4
+  relationship: 1.2
   yara: 1.6
-  structural: 1.0
-  pdf_javascript: 1.5
-  pdf_actions: 1.3
-  strings: 0.9
-  entropy: 1.1
+  pdf: 1.4
+  rtf: 1.3
+  other: 1.0
 
 # Score caps per category prevent a single analyzer from dominating the total.
 category_caps:
-  macros: 60
-  embedded_objects: 50
+  macro: 60
+  embedded: 50
   metadata: 30
-  urls: 40
-  obfuscation: 55
+  relationship: 50
   yara: 70
-  structural: 35
-  pdf_javascript: 60
-  pdf_actions: 50
-  strings: 35
-  entropy: 25
+  pdf: 60
+  rtf: 55
+  other: 40
 
 # Bonus points applied when certain combinations of findings co-occur.
 compound_indicators:
   - name: "macro_with_obfuscation"
     description: "Macros detected alongside obfuscation techniques"
     required_categories:
-      - macros
-      - obfuscation
+      - macro
+      - other
     bonus_score: 15
 
   - name: "macro_with_urls"
     description: "Macros detected alongside suspicious URLs"
     required_categories:
-      - macros
-      - urls
+      - macro
+      - relationship
     bonus_score: 10
 
   - name: "macro_with_embedded_pe"
     description: "Macros detected alongside embedded PE files"
     required_categories:
-      - macros
-      - embedded_objects
+      - macro
+      - embedded
     bonus_score: 20
 
   - name: "obfuscation_with_urls"
     description: "Obfuscation detected alongside suspicious URLs"
     required_categories:
-      - obfuscation
-      - urls
+      - other
+      - relationship
     bonus_score: 10
 
   - name: "pdf_js_with_actions"
     description: "JavaScript in PDF with automatic actions"
     required_categories:
-      - pdf_javascript
-      - pdf_actions
+      - pdf
+      - relationship
     bonus_score: 15
