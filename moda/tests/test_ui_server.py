@@ -7,6 +7,7 @@ import threading
 import unittest
 import urllib.request
 import zipfile
+from collections import OrderedDict
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
@@ -24,7 +25,7 @@ def build_docx(path: Path) -> None:
         archive.writestr(
             "docProps/core.xml",
             (
-                '<cp:coreProperties '
+                "<cp:coreProperties "
                 'xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" '
                 'xmlns:dc="http://purl.org/dc/elements/1.1/">'
                 "<dc:creator>UI Analyst</dc:creator>"
@@ -38,6 +39,13 @@ def build_docx(path: Path) -> None:
 
 
 class MODAUIServerTests(unittest.TestCase):
+    def _configure_cache(self, server: ThreadingHTTPServer) -> None:
+        server.result_cache = OrderedDict()
+        server.cache_lock = threading.Lock()
+        server.analysis_semaphore = threading.BoundedSemaphore(2)
+        server.max_concurrent_analyses = 2
+        server.access_token = ""
+
     def test_analyze_endpoint_returns_result_json(self) -> None:
         server = ThreadingHTTPServer(("127.0.0.1", 0), MODAUIHandler)
         server.skip_yara = False
@@ -106,6 +114,43 @@ class MODAUIServerTests(unittest.TestCase):
         self.assertTrue(body.startswith(b"%PDF-1.4"))
         self.assertIn(b"%%EOF", body)
         self.assertIn("YÖNETİCİ ÖZETİ".encode("cp1254"), body)
+
+    def test_report_endpoint_uses_cached_analysis_without_reupload(self) -> None:
+        server = ThreadingHTTPServer(("127.0.0.1", 0), MODAUIHandler)
+        server.skip_yara = False
+        server.max_size_mb = 100
+        server.verbose = False
+        self._configure_cache(server)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+
+        try:
+            with tempfile.TemporaryDirectory() as temp_dir:
+                sample = Path(temp_dir) / "cached.docx"
+                build_docx(sample)
+                analyze_request = urllib.request.Request(
+                    f"http://127.0.0.1:{server.server_port}/api/analyze?yara=0",
+                    data=sample.read_bytes(),
+                    method="POST",
+                    headers={"X-Filename": "cached.docx"},
+                )
+                with urllib.request.urlopen(analyze_request, timeout=5) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+
+                analysis_id = payload["extra"]["analysis_id"]
+                report_request = urllib.request.Request(
+                    f"http://127.0.0.1:{server.server_port}/api/report?analysis_id={analysis_id}&lang=en",
+                    data=b"",
+                    method="POST",
+                )
+                with urllib.request.urlopen(report_request, timeout=5) as response:
+                    body = response.read()
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+
+        self.assertTrue(body.startswith(b"%PDF-1.4"))
 
 
 if __name__ == "__main__":

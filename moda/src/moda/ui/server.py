@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import mimetypes
+import os
 import secrets
 import tempfile
 import threading
@@ -11,15 +12,28 @@ from collections import OrderedDict
 from dataclasses import replace
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import Any, cast
 from urllib.parse import parse_qs, unquote, urlparse
 
 from moda.core.engine import AnalyzerEngine
 from moda.core.models import AnalysisResult
 from moda.reporting.pdf_report import PDFReporter
 
-
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 logger = logging.getLogger(__name__)
+
+
+class MODAHTTPServer(ThreadingHTTPServer):
+    skip_yara: bool
+    max_size_mb: int
+    verbose: bool
+    access_token: str
+    max_concurrent_analyses: int
+    analysis_semaphore: threading.BoundedSemaphore
+    result_cache: OrderedDict[str, tuple[float, AnalysisResult]]
+    cache_lock: threading.Lock
+    rules_dir: str | None
+    scoring_config: str | None
 
 
 class MODAUIHandler(SimpleHTTPRequestHandler):
@@ -27,7 +41,7 @@ class MODAUIHandler(SimpleHTTPRequestHandler):
 
     server_version = "MODAUI/0.1"
 
-    def __init__(self, *args: object, directory: str | None = None, **kwargs: object) -> None:
+    def __init__(self, *args: Any, directory: str | None = None, **kwargs: Any) -> None:
         super().__init__(*args, directory=str(STATIC_DIR), **kwargs)
 
     def do_GET(self) -> None:
@@ -56,7 +70,9 @@ class MODAUIHandler(SimpleHTTPRequestHandler):
                 self._send_json({"error": "Analysis result expired or was not found"}, status=404)
                 return
             language = query.get("lang", ["en"])[0]
-            self._send_pdf(cached, cached.file_name, language=language if language in {"en", "tr"} else "en")
+            self._send_pdf(
+                cached, cached.file_name, language=language if language in {"en", "tr"} else "en"
+            )
             return
 
         try:
@@ -82,6 +98,7 @@ class MODAUIHandler(SimpleHTTPRequestHandler):
         suffix = Path(original_name).suffix[:16]
         temp_path: Path | None = None
         acquired = False
+        semaphore: Any = None
 
         try:
             semaphore = getattr(self.server, "analysis_semaphore", None)
@@ -100,6 +117,8 @@ class MODAUIHandler(SimpleHTTPRequestHandler):
             engine = AnalyzerEngine(
                 skip_yara=getattr(self.server, "skip_yara", False) or request_skip_yara,
                 max_file_size_mb=max_size_mb,
+                rules_dir=getattr(self.server, "rules_dir", None),
+                scoring_config=getattr(self.server, "scoring_config", None),
             )
             result = engine.analyze_file(temp_path)
             display_name = Path(original_name).name
@@ -135,12 +154,13 @@ class MODAUIHandler(SimpleHTTPRequestHandler):
         )
         super().end_headers()
 
-    def guess_type(self, path: str) -> str:
-        if path.endswith(".js"):
+    def guess_type(self, path: str | os.PathLike[str]) -> str:
+        path_string = os.fspath(path)
+        if path_string.endswith(".js"):
             return "text/javascript"
-        if path.endswith(".css"):
+        if path_string.endswith(".css"):
             return "text/css"
-        return mimetypes.guess_type(path)[0] or "application/octet-stream"
+        return mimetypes.guess_type(path_string)[0] or "application/octet-stream"
 
     def log_message(self, format: str, *args: object) -> None:
         if getattr(self.server, "verbose", False):
@@ -189,7 +209,7 @@ class MODAUIHandler(SimpleHTTPRequestHandler):
             if time.monotonic() - created > 15 * 60:
                 cache.pop(analysis_id, None)
                 return None
-            return result
+            return cast(AnalysisResult, result)
 
     def _send_pdf(
         self,
@@ -199,10 +219,14 @@ class MODAUIHandler(SimpleHTTPRequestHandler):
         language: str = "en",
     ) -> None:
         body = PDFReporter(language=language).generate(result)
-        safe_stem = "".join(
-            character for character in (Path(original_name).stem or "moda")
-            if character.isalnum() or character in {"-", "_", "."}
-        )[:80] or "moda"
+        safe_stem = (
+            "".join(
+                character
+                for character in (Path(original_name).stem or "moda")
+                if character.isalnum() or character in {"-", "_", "."}
+            )[:80]
+            or "moda"
+        )
         report_name = f"{safe_stem}-moda-report.pdf"
         self.send_response(200)
         self.send_header("Content-Type", "application/pdf")
@@ -222,13 +246,15 @@ def run_ui(
     allow_remote: bool = False,
     access_token: str | None = None,
     max_concurrent_analyses: int = 2,
+    rules_dir: str | Path | None = None,
+    scoring_config: str | Path | None = None,
 ) -> None:
     """Start the local MODA browser UI."""
     if host not in {"127.0.0.1", "localhost", "::1"} and not allow_remote:
         raise ValueError("Remote UI binding requires --allow-remote and an access token")
     if allow_remote and not access_token:
         access_token = secrets.token_urlsafe(24)
-    server = ThreadingHTTPServer((host, port), MODAUIHandler)
+    server = MODAHTTPServer((host, port), MODAUIHandler)
     server.skip_yara = skip_yara
     server.max_size_mb = max_size_mb
     server.verbose = verbose
@@ -237,6 +263,8 @@ def run_ui(
     server.analysis_semaphore = threading.BoundedSemaphore(server.max_concurrent_analyses)
     server.result_cache = OrderedDict()
     server.cache_lock = threading.Lock()
+    server.rules_dir = str(Path(rules_dir).resolve()) if rules_dir else None
+    server.scoring_config = str(Path(scoring_config).resolve()) if scoring_config else None
 
     url = f"http://{host}:{port}"
     print(f"MODA UI running at {url}")
