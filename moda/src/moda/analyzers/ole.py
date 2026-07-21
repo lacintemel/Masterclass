@@ -59,7 +59,7 @@ class OLEAnalyzer(BaseAnalyzer):
     @property
     def name(self) -> str:
         return "OLEAnalyzer"
-        
+
     @property
     def description(self) -> str:
         return "Inspects OLE compound document structures."
@@ -74,7 +74,7 @@ class OLEAnalyzer(BaseAnalyzer):
             return
         if not olefile.isOleFile(context.file_bytes):
             return
-            
+
         try:
             with olefile.OleFileIO(context.file_bytes) as ole:
                 self._inspect_streams(context, ole)
@@ -173,8 +173,7 @@ class OLEAnalyzer(BaseAnalyzer):
 
     def _check_activex(self, context: AnalysisContext, ole: Any) -> None:
         stream_names = [
-            "/".join(stream).lower()
-            for stream in ole.listdir(streams=True, storages=False)
+            "/".join(stream).lower() for stream in ole.listdir(streams=True, storages=False)
         ]
         activex = [name for name in stream_names if "activex" in name or "ocx" in name]
         if activex:
@@ -247,10 +246,7 @@ class OLEAnalyzer(BaseAnalyzer):
         return entries
 
     def _escape_control_chars(self, value: str) -> str:
-        return "".join(
-            f"\\x{ord(char):02x}" if ord(char) < 32 else char
-            for char in value
-        )
+        return "".join(f"\\x{ord(char):02x}" if ord(char) < 32 else char for char in value)
 
     def _inspect_powerpoint_streams(self, context: AnalysisContext, ole: Any) -> None:
         if context.file_type is not FileType.OLE_PPT:
@@ -348,16 +344,16 @@ class OLEAnalyzer(BaseAnalyzer):
         ole: Any,
         stream: list[str],
     ) -> bytes:
-        size = int(ole.get_size(stream))
+        size = int(ole.get_size(stream)) if hasattr(ole, "get_size") else 0
         if size > context.limits.max_archive_entry_bytes:
             raise ValueError(
                 f"OLE stream exceeds {context.limits.max_archive_entry_bytes} byte safety limit"
             )
         handle = ole.openstream(stream)
         try:
-            return handle.read(context.limits.max_archive_entry_bytes + 1)
+            return bytes(handle.read(context.limits.max_archive_entry_bytes + 1))
         except TypeError:  # simple file-like test doubles
-            return handle.read()
+            return bytes(handle.read())
 
     def _powerpoint_stream_candidates(self, ole: Any) -> list[list[str]]:
         candidates: list[list[str]] = []

@@ -11,14 +11,18 @@ except ImportError:  # pragma: no cover - optional analyzer dependency
 from ..core.base import BaseAnalyzer
 from ..core.context import AnalysisContext
 from ..core.enums import FindingSeverity
-from ..utils.file_utils import calculate_entropy, extract_strings, is_pe_file
 from ..utils.archive_utils import read_zip_member, validate_zip_archive
+from ..utils.file_utils import calculate_entropy, extract_strings, is_pe_file
+
 
 class EmbeddedObjectAnalyzer(BaseAnalyzer):
     @property
-    def name(self) -> str: return "EmbeddedObjectAnalyzer"
+    def name(self) -> str:
+        return "EmbeddedObjectAnalyzer"
+
     @property
-    def description(self) -> str: return "Analyzes embedded objects."
+    def description(self) -> str:
+        return "Analyzes embedded objects."
 
     SCRIPT_EXTENSIONS = (".vbs", ".vbe", ".js", ".jse", ".ps1", ".bat", ".cmd", ".hta", ".wsf")
 
@@ -31,11 +35,12 @@ class EmbeddedObjectAnalyzer(BaseAnalyzer):
 
         context.extra["embedded_objects"] = embedded
         for item in embedded:
-            severity = self._severity_for_type(item["type"])
+            item_type = str(item["type"])
+            severity = self._severity_for_type(item_type)
             self._add_finding(
                 context,
-                title=f"Embedded {item['type']}",
-                description=f"Detected embedded {item['type'].lower()} content.",
+                title=f"Embedded {item_type}",
+                description=f"Detected embedded {item_type.lower()} content.",
                 severity=severity,
                 details=item,
             )
@@ -80,15 +85,13 @@ class EmbeddedObjectAnalyzer(BaseAnalyzer):
     ) -> list[dict[str, object]]:
         data = context.file_bytes if isinstance(context, AnalysisContext) else context
         max_nested_payloads = (
-            context.limits.max_nested_payloads
-            if isinstance(context, AnalysisContext)
-            else 100
+            context.limits.max_nested_payloads if isinstance(context, AnalysisContext) else 100
         )
         embedded: list[dict[str, object]] = []
         signatures = [
             (b"MZ", "PE Executable"),
             (b"%PDF", "Nested PDF"),
-            (b"\xD0\xCF\x11\xE0", "Nested OLE Document"),
+            (b"\xd0\xcf\x11\xe0", "Nested OLE Document"),
             (b"PK\x03\x04", "Nested ZIP/OOXML"),
         ]
         for signature, item_type in signatures:
@@ -118,7 +121,7 @@ class EmbeddedObjectAnalyzer(BaseAnalyzer):
             return is_pe_file(memoryview(data)[offset:])
         if signature == b"PK\x03\x04":
             return data.find(b"PK\x05\x06", offset) >= 0
-        if signature == b"\xD0\xCF\x11\xE0":
+        if signature == b"\xd0\xcf\x11\xe0":
             return len(data) - offset > 512
         if signature == b"%PDF":
             return data.find(b"%%EOF", offset, min(len(data), offset + 20 * 1024 * 1024)) >= 0
@@ -126,9 +129,7 @@ class EmbeddedObjectAnalyzer(BaseAnalyzer):
 
     def _is_interesting_ooxml_part(self, name: str) -> bool:
         return (
-            "/embeddings/" in name
-            or name.endswith(self.SCRIPT_EXTENSIONS)
-            or "/activex/" in name
+            "/embeddings/" in name or name.endswith(self.SCRIPT_EXTENSIONS) or "/activex/" in name
         )
 
     def _classify(self, name: str, data: bytes) -> str:
@@ -137,7 +138,7 @@ class EmbeddedObjectAnalyzer(BaseAnalyzer):
             return "PE Executable"
         if data.startswith(b"%PDF"):
             return "Nested PDF"
-        if data.startswith(b"\xD0\xCF\x11\xE0"):
+        if data.startswith(b"\xd0\xcf\x11\xe0"):
             return "OLE Object"
         if data.startswith(b"PK\x03\x04"):
             return "Nested ZIP/OOXML"

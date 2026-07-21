@@ -1,23 +1,31 @@
 from __future__ import annotations
 
 import io
-
-try:
-    from pypdf import PdfReader
-except ImportError:  # pragma: no cover - optional analyzer dependency
-    PdfReader = None
+from importlib import import_module
+from typing import Any
 
 from ..core.base import BaseAnalyzer
 from ..core.context import AnalysisContext
 from ..core.enums import FileType, FindingSeverity
 from ..utils.file_utils import extract_strings
 
+try:
+    PdfReader: Any = import_module("pypdf").PdfReader
+except ImportError:  # pragma: no cover - optional analyzer dependency
+    PdfReader = None
+
+
 class PDFAnalyzer(BaseAnalyzer):
     @property
-    def name(self) -> str: return "PDFAnalyzer"
+    def name(self) -> str:
+        return "PDFAnalyzer"
+
     @property
-    def description(self) -> str: return "Analyzes PDF files."
-    def can_run(self, context: AnalysisContext) -> bool: return context.file_type == FileType.PDF
+    def description(self) -> str:
+        return "Analyzes PDF files."
+
+    def can_run(self, context: AnalysisContext) -> bool:
+        return context.file_type == FileType.PDF
 
     SUSPICIOUS_KEYWORDS = {
         b"/JavaScript": ("PDF JavaScript", FindingSeverity.HIGH),

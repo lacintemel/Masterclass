@@ -6,9 +6,10 @@ import zipfile
 
 from ..core.base import BaseAnalyzer
 from ..core.context import AnalysisContext
-from ..core.enums import FileType, FindingSeverity
-from ..utils.file_utils import extract_strings
+from ..core.enums import FindingSeverity
 from ..utils.archive_utils import read_zip_member, validate_zip_archive
+from ..utils.config_loader import load_indicators_config
+from ..utils.file_utils import extract_strings
 
 try:
     import olefile
@@ -20,11 +21,16 @@ try:
 except ImportError:  # pragma: no cover - optional analyzer dependency
     VBA_Parser = None
 
+
 class MacroAnalyzer(BaseAnalyzer):
+    def __init__(self) -> None:
+        super().__init__()
+        self.indicators = load_indicators_config()
+
     @property
     def name(self) -> str:
         return "MacroAnalyzer"
-        
+
     @property
     def description(self) -> str:
         return "Extracts and statically analyzes VBA macros."
@@ -59,7 +65,7 @@ class MacroAnalyzer(BaseAnalyzer):
         if context.file_type.is_ooxml and not chunks:
             chunks.extend(self._extract_ooxml_vba_strings(context))
         elif context.file_type.is_ole and not chunks:
-            chunks.extend(self._extract_ole_vba_strings(context.file_bytes))
+            chunks.extend(self._extract_ole_vba_strings(context))
 
         if context.file_type.is_macro_enabled and not chunks:
             chunks.extend(
@@ -119,12 +125,12 @@ class MacroAnalyzer(BaseAnalyzer):
             return []
         return strings
 
-    def _extract_ole_vba_strings(self, data: bytes) -> list[str]:
+    def _extract_ole_vba_strings(self, context: AnalysisContext) -> list[str]:
         if olefile is None:
             return []
         strings: list[str] = []
         try:
-            with olefile.OleFileIO(data) as ole:
+            with olefile.OleFileIO(context.file_bytes) as ole:
                 for stream in ole.listdir(streams=True, storages=False):
                     stream_name = "/".join(stream).lower()
                     if "vba" in stream_name or stream_name.endswith(("/dir", "/project")):
@@ -134,12 +140,16 @@ class MacroAnalyzer(BaseAnalyzer):
                                 context.errors.append(
                                     f"VBA stream skipped because it exceeds {context.limits.max_archive_entry_bytes} bytes"
                                 )
-                                context.extra.setdefault("capability_overrides", {})[self.name] = "partial"
+                                context.extra.setdefault("capability_overrides", {})[self.name] = (
+                                    "partial"
+                                )
                                 continue
-                            data = ole.openstream(stream).read(context.limits.max_archive_entry_bytes + 1)
+                            stream_data = ole.openstream(stream).read(
+                                context.limits.max_archive_entry_bytes + 1
+                            )
                             strings.extend(
                                 extract_strings(
-                                    data,
+                                    stream_data,
                                     min_length=4,
                                     max_strings=context.limits.max_extracted_strings,
                                     max_string_length=context.limits.max_string_length,
@@ -175,6 +185,8 @@ class MacroAnalyzer(BaseAnalyzer):
 
     def _scan_auto_execution(self, context: AnalysisContext, lowered: str) -> None:
         triggers = [
+            str(item).lower() for item in self.indicators.get("auto_exec_triggers", [])
+        ] or [
             "autoopen",
             "auto_open",
             "autoexec",
@@ -194,7 +206,8 @@ class MacroAnalyzer(BaseAnalyzer):
             )
 
     def _scan_process_execution(self, context: AnalysisContext, lowered: str) -> None:
-        keywords = [
+        configured = self.indicators.get("suspicious_functions", {}).get("shell_execution", [])
+        keywords = [str(item).lower() for item in configured] or [
             "shell",
             "createobject",
             "wscript.shell",
@@ -206,6 +219,20 @@ class MacroAnalyzer(BaseAnalyzer):
             "certutil",
             "bitsadmin",
         ]
+        keywords.extend(
+            (
+                "createobject",
+                "wscript.shell",
+                "cmd.exe",
+                "powershell",
+                "mshta",
+                "rundll32",
+                "regsvr32",
+                "certutil",
+                "bitsadmin",
+            )
+        )
+        keywords = list(dict.fromkeys(keywords))
         found = [keyword for keyword in keywords if keyword in lowered]
         if found:
             self._add_finding(

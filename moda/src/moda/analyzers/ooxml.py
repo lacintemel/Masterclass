@@ -12,20 +12,24 @@ from ..core.enums import FileType, FindingSeverity
 from ..core.exceptions import ResourceLimitError
 from ..utils.archive_utils import read_zip_member, validate_zip_archive
 
+
 class OOXMLAnalyzer(BaseAnalyzer):
     @property
     def name(self) -> str:
         return "OOXMLAnalyzer"
-        
+
     @property
     def description(self) -> str:
         return "Inspects OOXML structures (DOCX, XLSX, PPTX)."
 
     def can_run(self, context: AnalysisContext) -> bool:
         return context.file_type in (
-            FileType.OOXML_DOCX, FileType.OOXML_DOCM, 
-            FileType.OOXML_XLSX, FileType.OOXML_XLSM, 
-            FileType.OOXML_PPTX, FileType.OOXML_PPTM
+            FileType.OOXML_DOCX,
+            FileType.OOXML_DOCM,
+            FileType.OOXML_XLSX,
+            FileType.OOXML_XLSM,
+            FileType.OOXML_PPTX,
+            FileType.OOXML_PPTM,
         )
 
     def analyze(self, context: AnalysisContext) -> None:
@@ -43,7 +47,8 @@ class OOXMLAnalyzer(BaseAnalyzer):
                 if vba_projects:
                     severity = (
                         FindingSeverity.CRITICAL
-                        if context.file_type in {FileType.OOXML_DOCX, FileType.OOXML_XLSX, FileType.OOXML_PPTX}
+                        if context.file_type
+                        in {FileType.OOXML_DOCX, FileType.OOXML_XLSX, FileType.OOXML_PPTX}
                         else FindingSeverity.HIGH
                     )
                     title = (
@@ -59,9 +64,15 @@ class OOXMLAnalyzer(BaseAnalyzer):
                         {"projects": vba_projects},
                     )
 
-                embeddings = [f for f in files if 'embeddings/' in f.lower()]
+                embeddings = [f for f in files if "embeddings/" in f.lower()]
                 if embeddings:
-                    self._add_finding(context, "Embedded Objects", f"Found {len(embeddings)} embedded objects", FindingSeverity.MEDIUM, {"files": embeddings})
+                    self._add_finding(
+                        context,
+                        "Embedded Objects",
+                        f"Found {len(embeddings)} embedded objects",
+                        FindingSeverity.MEDIUM,
+                        {"files": embeddings},
+                    )
 
                 self._inspect_xml_parts(context, z)
                 self._inspect_excel_parts(context, z)
@@ -76,7 +87,9 @@ class OOXMLAnalyzer(BaseAnalyzer):
             "embedded_count": sum(1 for name in lowered if "/embeddings/" in name),
             "activex_count": sum(1 for name in lowered if "/activex/" in name),
             "external_link_parts": sum(1 for name in lowered if "externallinks/" in name),
-            "connection_parts": sum(1 for name in lowered if "connections" in name or "querytables/" in name),
+            "connection_parts": sum(
+                1 for name in lowered if "connections" in name or "querytables/" in name
+            ),
         }
 
     def _inspect_xml_parts(self, context: AnalysisContext, archive: zipfile.ZipFile) -> None:
@@ -104,9 +117,14 @@ class OOXMLAnalyzer(BaseAnalyzer):
 
             if any(token in lowered for token in ("ddeauto", "dde ", "ddeexec")):
                 dde_hits.append(name)
-            if any(token in lowered for token in ("<o:oleobject", "oleobject", "olelink", "objectembed")):
+            if any(
+                token in lowered
+                for token in ("<o:oleobject", "oleobject", "olelink", "objectembed")
+            ):
                 ole_hits.append(name)
-            if any(token in lowered for token in ("activex", "customui", "onaction=", "xlink:href")):
+            if any(
+                token in lowered for token in ("activex", "customui", "onaction=", "xlink:href")
+            ):
                 active_content.append(name)
             if self._contains_suspicious_command_text(lowered):
                 suspicious_text.append(name)
@@ -263,8 +281,12 @@ class OOXMLAnalyzer(BaseAnalyzer):
         )
 
     def _contains_mshtml_activex_chain(self, lowered: str) -> bool:
-        has_mshtml_or_html = any(token in lowered for token in ("mshtml", "htmlfile", ".html", "mhtml:"))
-        has_activex_or_class = any(token in lowered for token in ("activex", "classid", "clsid:", "oleobject"))
+        has_mshtml_or_html = any(
+            token in lowered for token in ("mshtml", "htmlfile", ".html", "mhtml:")
+        )
+        has_activex_or_class = any(
+            token in lowered for token in ("activex", "classid", "clsid:", "oleobject")
+        )
         return has_mshtml_or_html and has_activex_or_class
 
     def _normalize_text(self, text: str) -> str:

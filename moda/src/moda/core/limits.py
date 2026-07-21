@@ -21,5 +21,5 @@ class AnalysisLimits:
     max_nested_payloads: int = 100
 
     @classmethod
-    def for_file_size_mb(cls, max_file_size_mb: int) -> "AnalysisLimits":
+    def for_file_size_mb(cls, max_file_size_mb: int) -> AnalysisLimits:
         return cls(max_file_bytes=max_file_size_mb * 1024 * 1024)

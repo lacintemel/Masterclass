@@ -9,14 +9,18 @@ from urllib.parse import unquote
 from ..core.base import BaseAnalyzer
 from ..core.context import AnalysisContext
 from ..core.enums import FindingSeverity
-from ..utils.regex_patterns import URL_PATTERN
 from ..utils.archive_utils import read_zip_member, validate_zip_archive
+from ..utils.regex_patterns import URL_PATTERN
+
 
 class RelationshipAnalyzer(BaseAnalyzer):
     @property
-    def name(self) -> str: return "RelationshipAnalyzer"
+    def name(self) -> str:
+        return "RelationshipAnalyzer"
+
     @property
-    def description(self) -> str: return "Analyzes document relationships."
+    def description(self) -> str:
+        return "Analyzes document relationships."
 
     def analyze(self, context: AnalysisContext) -> None:
         remote_relationships: list[dict[str, str]] = []
@@ -41,9 +45,7 @@ class RelationshipAnalyzer(BaseAnalyzer):
 
         if deduped:
             exploit_protocol = [
-                item
-                for item in deduped
-                if self._uses_office_exploit_protocol(item["target"])
+                item for item in deduped if self._uses_office_exploit_protocol(item["target"])
             ]
             if exploit_protocol:
                 self._add_finding(
@@ -114,19 +116,14 @@ class RelationshipAnalyzer(BaseAnalyzer):
             target_mode = element.attrib.get("TargetMode", "")
             rel_type = element.attrib.get("Type", "")
             if (
-                self._is_remote_target(target)
-                or self._uses_office_exploit_protocol(target)
-                or target_mode.lower() == "external"
-            ):
-                relationships.append(
-                    {
-                        "target": target,
-                        "type": rel_type,
-                        "mode": target_mode,
-                        "source": source,
-                    }
+                (
+                    self._is_remote_target(target)
+                    or self._uses_office_exploit_protocol(target)
+                    or target_mode.lower() == "external"
                 )
-            elif "attachedtemplate" in rel_type.lower() and target:
+                or "attachedtemplate" in rel_type.lower()
+                and target
+            ):
                 relationships.append(
                     {
                         "target": target,
@@ -142,7 +139,11 @@ class RelationshipAnalyzer(BaseAnalyzer):
 
     def _is_remote_target(self, target: str) -> bool:
         normalized = self._normalize_target(target)
-        return bool(re.match(r"(?i)^(?:https?|ftp|file|mhtml|ms-msdt|search-ms|ms-officecmd|\\\\)", normalized))
+        return bool(
+            re.match(
+                r"(?i)^(?:https?|ftp|file|mhtml|ms-msdt|search-ms|ms-officecmd|\\\\)", normalized
+            )
+        )
 
     def _is_high_risk_relationship(self, rel_type: str, target: str) -> bool:
         lowered_type = rel_type.lower()
@@ -154,7 +155,9 @@ class RelationshipAnalyzer(BaseAnalyzer):
             or "activex" in lowered_type
             or self._uses_office_exploit_protocol(target)
             or lowered_target.startswith(("file:", "\\\\"))
-            or lowered_target.endswith((".dotm", ".dot", ".xlam", ".hta", ".vbs", ".js", ".exe", ".dll", ".html", ".hta"))
+            or lowered_target.endswith(
+                (".dotm", ".dot", ".xlam", ".hta", ".vbs", ".js", ".exe", ".dll", ".html", ".hta")
+            )
         )
 
     def _uses_office_exploit_protocol(self, target: str) -> bool:
