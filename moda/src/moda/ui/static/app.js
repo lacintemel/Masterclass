@@ -978,6 +978,7 @@ el.downloadPdfBtn.addEventListener("click", async () => {
   try {
     const params = new URLSearchParams();
     params.set("yara", el.yaraToggle.checked ? "1" : "0");
+    params.set("lang", state.lang === "tr" ? "tr" : "en");
     const response = await fetch(`/api/report?${params.toString()}`, {
       method: "POST",
       headers: {

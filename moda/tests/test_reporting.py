@@ -16,6 +16,7 @@ from moda.cli import build_reporter, emit_report
 from moda.core.enums import FindingSeverity, IOCType
 from moda.core.engine import AnalyzerEngine
 from moda.core.models import Finding, IOC, YaraMatch
+from moda.reporting.pdf_report import PDFReporter
 
 
 def build_docx(path: Path) -> None:
@@ -120,6 +121,20 @@ class ReportingTests(unittest.TestCase):
             b"TECHNICAL EVIDENCE",
         ):
             self.assertIn(expected, payload)
+
+    def test_pdf_reporter_generates_turkish_report_with_turkish_characters(self) -> None:
+        result = self.make_result()
+        payload = PDFReporter(language="tr").generate(result)
+
+        for expected in (
+            "YÖNETİCİ ÖZETİ",
+            "DOSYA KİMLİĞİ",
+            "RİSK DEĞERLENDİRMESİ",
+            "AYRINTILI BULGULAR",
+            "SAYFA 1 /",
+            "hiçbir belge içeriği çalıştırılmadı",
+        ):
+            self.assertIn(expected.encode("cp1254"), payload)
 
     def test_pdf_report_automatically_paginates_long_content(self) -> None:
         result = self.make_result()

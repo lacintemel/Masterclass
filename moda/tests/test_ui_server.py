@@ -84,7 +84,7 @@ class MODAUIServerTests(unittest.TestCase):
             with tempfile.TemporaryDirectory() as temp_dir:
                 sample = Path(temp_dir) / "ui report.docx"
                 build_docx(sample)
-                url = f"http://127.0.0.1:{server.server_port}/api/report?yara=0"
+                url = f"http://127.0.0.1:{server.server_port}/api/report?yara=0&lang=tr"
                 request = urllib.request.Request(
                     url,
                     data=sample.read_bytes(),
@@ -105,6 +105,7 @@ class MODAUIServerTests(unittest.TestCase):
         self.assertEqual(content_type, "application/pdf")
         self.assertTrue(body.startswith(b"%PDF-1.4"))
         self.assertIn(b"%%EOF", body)
+        self.assertIn("YÖNETİCİ ÖZETİ".encode("cp1254"), body)
 
 
 if __name__ == "__main__":

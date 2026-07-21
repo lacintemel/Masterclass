@@ -52,6 +52,9 @@ class MODAUIHandler(SimpleHTTPRequestHandler):
 
         query = parse_qs(parsed.query)
         request_skip_yara = query.get("yara", ["1"])[0] == "0"
+        report_language = query.get("lang", ["en"])[0]
+        if report_language not in {"en", "tr"}:
+            report_language = "en"
         original_name = unquote(self.headers.get("X-Filename", "upload.bin"))
         suffix = Path(original_name).suffix[:16]
         temp_path: Path | None = None
@@ -69,7 +72,7 @@ class MODAUIHandler(SimpleHTTPRequestHandler):
             display_name = Path(original_name).name
             result = replace(result, file_name=display_name, file_path=display_name)
             if parsed.path == "/api/report":
-                self._send_pdf(result, display_name)
+                self._send_pdf(result, display_name, language=report_language)
                 return
             payload = result.to_dict()
             self._send_json(payload)
@@ -102,8 +105,14 @@ class MODAUIHandler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _send_pdf(self, result: AnalysisResult, original_name: str) -> None:
-        body = PDFReporter().generate(result)
+    def _send_pdf(
+        self,
+        result: AnalysisResult,
+        original_name: str,
+        *,
+        language: str = "en",
+    ) -> None:
+        body = PDFReporter(language=language).generate(result)
         report_name = f"{Path(original_name).stem or 'moda'}-moda-report.pdf"
         self.send_response(200)
         self.send_header("Content-Type", "application/pdf")
