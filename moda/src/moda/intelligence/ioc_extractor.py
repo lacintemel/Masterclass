@@ -14,11 +14,12 @@ from ..utils.regex_patterns import (
     refang,
 )
 
+
 class IOCExtractor(BaseAnalyzer):
     @property
     def name(self) -> str:
         return "IOCExtractor"
-        
+
     @property
     def description(self) -> str:
         return "Extracts IOCs from findings and text content."

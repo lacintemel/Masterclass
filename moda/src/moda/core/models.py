@@ -1,25 +1,26 @@
 """Data models for MODA analysis results.
 
-This module defines the immutable data containers used to represent
+This module defines read-only dataclass containers used to represent
 analysis findings, indicators of compromise, and YARA matches.
-All models use ``dataclasses`` with ``frozen=True`` for thread-safety
-and predictable hashing behaviour.
+The dataclass attributes are frozen; nested structured evidence is copied
+when an analysis result is created so later context mutations do not leak in.
 """
 
 from __future__ import annotations
 
+import copy
 import hashlib
-import uuid
+import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
 from moda.core.enums import FindingSeverity, IOCType
 
-
 # ---------------------------------------------------------------------------
 # Finding
 # ---------------------------------------------------------------------------
+
 
 @dataclass(frozen=True, slots=True)
 class Finding:
@@ -31,7 +32,7 @@ class Finding:
         severity: How severe/suspicious this finding is.
         analyzer: Fully-qualified name of the analyzer that produced it.
         details: Arbitrary structured data supporting the finding.
-        finding_id: Unique identifier (auto-generated UUID4).
+        finding_id: Stable evidence identifier derived from finding content.
         timestamp: When the finding was created (UTC).
     """
 
@@ -40,10 +41,29 @@ class Finding:
     severity: FindingSeverity
     analyzer: str
     details: dict[str, Any] = field(default_factory=dict)
-    finding_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    finding_id: str = ""
     timestamp: datetime = field(
         default_factory=lambda: datetime.now(timezone.utc),
     )
+
+    def __post_init__(self) -> None:
+        if not self.finding_id:
+            raw = json.dumps(
+                {
+                    "title": self.title,
+                    "description": self.description,
+                    "severity": self.severity.name,
+                    "analyzer": self.analyzer,
+                    "details": self.details,
+                },
+                sort_keys=True,
+                default=str,
+            )
+            object.__setattr__(
+                self,
+                "finding_id",
+                hashlib.sha256(raw.encode("utf-8")).hexdigest()[:20],
+            )
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize the finding to a plain dictionary."""
@@ -61,6 +81,7 @@ class Finding:
 # ---------------------------------------------------------------------------
 # IOC
 # ---------------------------------------------------------------------------
+
 
 @dataclass(frozen=True, slots=True)
 class IOC:
@@ -88,10 +109,7 @@ class IOC:
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, IOC):
             return NotImplemented
-        return (
-            self.ioc_type == other.ioc_type
-            and self.value.lower() == other.value.lower()
-        )
+        return self.ioc_type == other.ioc_type and self.value.lower() == other.value.lower()
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize the IOC to a plain dictionary."""
@@ -108,6 +126,7 @@ class IOC:
 # ---------------------------------------------------------------------------
 # YaraMatch
 # ---------------------------------------------------------------------------
+
 
 @dataclass(frozen=True, slots=True)
 class YaraMatch:
@@ -164,9 +183,10 @@ class YaraMatch:
 # AnalysisResult
 # ---------------------------------------------------------------------------
 
+
 @dataclass(frozen=True, slots=True)
 class AnalysisResult:
-    """Immutable snapshot of a completed analysis.
+    """Read-only attribute snapshot of a completed analysis.
 
     This is the primary data container consumed by reporters.  It is
     typically constructed from a mutable :class:`AnalysisContext` after
@@ -247,14 +267,14 @@ class AnalysisResult:
         *,
         duration: float = 0.0,
         recommendations: tuple[str, ...] | list[str] = (),
-    ) -> "AnalysisResult":
+    ) -> AnalysisResult:
         """Build an immutable result snapshot from a mutable AnalysisContext."""
         import hashlib as _hl
 
-        md5 = _hl.md5(ctx.file_bytes).hexdigest()
-        sha1 = _hl.sha1(ctx.file_bytes).hexdigest()
+        md5 = _hl.md5(ctx.file_bytes, usedforsecurity=False).hexdigest()
+        sha1 = _hl.sha1(ctx.file_bytes, usedforsecurity=False).hexdigest()
 
-        extra = dict(ctx.extra)
+        extra = copy.deepcopy(ctx.extra)
         extra["errors"] = list(ctx.errors)
 
         return cls(
@@ -266,16 +286,21 @@ class AnalysisResult:
             file_hash_md5=ctx.hashes.get("MD5", md5),
             file_hash_sha1=ctx.hashes.get("SHA1", sha1),
             file_hash_sha256=ctx.hashes.get("SHA256", ctx.file_hash),
-            metadata=dict(ctx.metadata),
+            metadata=copy.deepcopy(ctx.metadata),
             findings=tuple(ctx.findings),
-            iocs=tuple(sorted(ctx.iocs, key=lambda item: (item.ioc_type.value, item.value.lower()))),
-            yara_matches=tuple(sorted(ctx.yara_matches, key=lambda item: (item.rule_namespace, item.rule_name))),
+            iocs=tuple(
+                sorted(ctx.iocs, key=lambda item: (item.ioc_type.value, item.value.lower()))
+            ),
+            yara_matches=tuple(
+                sorted(ctx.yara_matches, key=lambda item: (item.rule_namespace, item.rule_name))
+            ),
             macro_code=tuple(ctx.macro_code),
             risk_level=ctx.risk_level.name.lower(),
             risk_score=ctx.risk_score,
-            score_breakdown=dict(ctx.score_breakdown),
+            score_breakdown=copy.deepcopy(ctx.score_breakdown),
             recommendations=tuple(recommendations),
             analysis_duration=duration,
+            analysis_timestamp=datetime.fromtimestamp(ctx.analysis_start, timezone.utc),
             extra=extra,
         )
 

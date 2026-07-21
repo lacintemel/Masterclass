@@ -4,7 +4,7 @@ from pathlib import Path
 
 from ..core.base import BaseAnalyzer
 from ..core.context import AnalysisContext
-from ..core.enums import RiskLevel, FindingSeverity
+from ..core.enums import FindingSeverity, RiskLevel
 from ..utils.config_loader import load_scoring_config
 
 
@@ -40,6 +40,11 @@ class RiskScorer(BaseAnalyzer):
             "color": "#6aa7b8",
             "description": "Suspicious metadata or document properties.",
         },
+        "obfuscation": {
+            "label": "Obfuscation",
+            "color": "#8c78b8",
+            "description": "Encoded or reconstructed content intended to conceal behavior.",
+        },
         "yara": {
             "label": "YARA matches",
             "color": "#9b7cf6",
@@ -55,14 +60,14 @@ class RiskScorer(BaseAnalyzer):
     def __init__(self, config_path: str | Path | None = None):
         super().__init__()
         self.config = load_scoring_config(Path(config_path) if config_path else None)
-        self.weights = self.config.get('severity_weights', {})
-        self.levels = self.config.get('risk_levels', {})
-        self.max_score = self.config.get('max_score', 100)
+        self.weights = self.config.get("severity_weights", {})
+        self.levels = self.config.get("risk_levels", {})
+        self.max_score = self._as_float(self.config.get("max_score", 100))
 
     @property
     def name(self) -> str:
         return "RiskScorer"
-        
+
     @property
     def description(self) -> str:
         return "Calculates final risk score based on findings."
@@ -106,9 +111,7 @@ class RiskScorer(BaseAnalyzer):
             capped_points = min(raw_points, cap)
             finding_score += capped_points
             reasons = [
-                str(detail["title"])
-                for detail in finding_details
-                if detail["category"] == category
+                str(detail["title"]) for detail in finding_details if detail["category"] == category
             ]
             for index, reason in enumerate(reasons):
                 self._add_component_points(
@@ -139,10 +142,12 @@ class RiskScorer(BaseAnalyzer):
             min_score = thresholds.get("min_score", thresholds.get("min", 0))
             max_score = thresholds.get("max_score", thresholds.get("max", self.max_score))
             upper_inclusive = max_score >= self.max_score
-            if min_score <= score and (score <= max_score if upper_inclusive else score < max_score):
+            if min_score <= score and (
+                score <= max_score if upper_inclusive else score < max_score
+            ):
                 risk_level = RiskLevel[level_name.upper()]
                 break
-                
+
         context.set_risk(
             score,
             risk_level,
@@ -181,7 +186,7 @@ class RiskScorer(BaseAnalyzer):
                 "reasons": [],
             },
         )
-        component["points"] = float(component["points"]) + points
+        component["points"] = self._as_float(component["points"]) + points
         reasons = component["reasons"]
         if isinstance(reasons, list) and reason not in reasons:
             reasons.append(reason)
@@ -191,9 +196,9 @@ class RiskScorer(BaseAnalyzer):
         components: dict[str, dict[str, object]],
         score: float,
     ) -> None:
-        total_points = sum(float(component["points"]) for component in components.values())
+        total_points = sum(self._as_float(component["points"]) for component in components.values())
         for component in components.values():
-            raw_points = float(component["points"])
+            raw_points = self._as_float(component["points"])
             if total_points > self.max_score and total_points:
                 display_points = round((raw_points / total_points) * score, 2)
             else:
@@ -221,13 +226,24 @@ class RiskScorer(BaseAnalyzer):
                 )
         return total
 
+    def _as_float(self, value: object) -> float:
+        if isinstance(value, (str, bytes, int, float)):
+            return float(value)
+        return 0.0
+
     def _category_for_finding(self, analyzer: str, title: str) -> str:
         lowered = f"{analyzer} {title}".lower()
+        if "yara" in lowered:
+            return "yara"
+        if any(token in lowered for token in ("obfuscat", "encoded", "high entropy")):
+            return "obfuscation"
         if any(token in lowered for token in ("macro", "vba")):
             return "macro"
         if any(token in lowered for token in ("dde", "customui", "command text")):
             return "macro"
-        if any(token in lowered for token in ("embedded", "ole", "activex", "object pool", "package")):
+        if any(
+            token in lowered for token in ("embedded", "ole", "activex", "object pool", "package")
+        ):
             return "embedded"
         if any(token in lowered for token in ("relationship", "template", "external", "remote")):
             return "relationship"
@@ -239,7 +255,7 @@ class RiskScorer(BaseAnalyzer):
             return "metadata"
         return "other"
 
-    def _risk_summary(self, risk_level: RiskLevel, score: int) -> str:
+    def _risk_summary(self, risk_level: RiskLevel, score: float) -> str:
         if risk_level is RiskLevel.MEDIUM and score == 26:
             return (
                 "The file type is outside MODA's supported document scope, so this result is "
@@ -262,14 +278,28 @@ class RiskScorer(BaseAnalyzer):
         titles = " ".join(finding.title.lower() for finding in context.findings)
         text = context.get_all_text().lower()
         combined = f"{titles} {text}"
-        if any(token in combined for token in ("macro", "auto-execution", "process execution", "powershell", "cmd.exe")):
-            impacts.append("User interaction can trigger command execution, script launch, or second-stage payload download.")
-        if any(token in combined for token in ("remote relationship", "external", "attachedtemplate", "template")):
-            impacts.append("The document may load remote templates or resources that change behavior after delivery.")
+        if any(
+            token in combined
+            for token in ("macro", "auto-execution", "process execution", "powershell", "cmd.exe")
+        ):
+            impacts.append(
+                "User interaction can trigger command execution, script launch, or second-stage payload download."
+            )
+        if any(
+            token in combined
+            for token in ("remote relationship", "external", "attachedtemplate", "template")
+        ):
+            impacts.append(
+                "The document may load remote templates or resources that change behavior after delivery."
+            )
         if any(token in combined for token in ("embedded", "ole", "activex", "object")):
-            impacts.append("Embedded objects may drop files, exploit Office components, or hide secondary content.")
+            impacts.append(
+                "Embedded objects may drop files, exploit Office components, or hide secondary content."
+            )
         if context.iocs:
-            impacts.append("Extracted URLs, domains, IPs, or file paths can indicate network callbacks or persistence artifacts.")
+            impacts.append(
+                "Extracted URLs, domains, IPs, or file paths can indicate network callbacks or persistence artifacts."
+            )
         if not impacts:
             impacts.append("No concrete impact path was identified from static indicators alone.")
         return impacts
