@@ -7,7 +7,8 @@ name = "moda"
 version = "0.1.0"
 description = "Malicious Office Document Analyzer - A Python static analysis tool for Office documents and PDFs"
 readme = "README.md"
-license = {text = "MIT"}
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.10"
 authors = [
     {name = "MODA Team"},
@@ -21,7 +22,6 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
 dependencies = [
@@ -30,9 +30,6 @@ dependencies = [
     "oletools>=0.60",
     "yara-python>=4.3.0",
     "pypdf>=3.0.0",
-    "lxml>=4.9.0",
-    "pefile>=2023.2.7",
-    "jinja2>=3.1.0",
     "pyyaml>=6.0",
     "rich>=13.0.0",
 ]
@@ -54,6 +51,12 @@ where = ["src"]
 [tool.setuptools.package-data]
 "moda.ui" = ["static/*.html", "static/*.css", "static/*.js"]
 
+[tool.setuptools.data-files]
+"share/moda/config" = ["config/*.yaml"]
+"share/moda/rules/official" = ["rules/official/*.yar", "rules/official/*.yara"]
+"share/moda/rules/community" = ["rules/community/*.yar", "rules/community/*.yara", "rules/community/*.md"]
+"share/moda/rules/external" = ["rules/external/*.yar", "rules/external/*.yara", "rules/external/*.md"]
+
 [tool.ruff]
 target-version = "py310"
 line-length = 100
@@ -72,6 +75,21 @@ select = [
     "C4",   # flake8-comprehensions
     "SIM",  # flake8-simplify
 ]
+ignore = [
+    "B027",   # setup/teardown are intentional optional lifecycle hooks
+    "C401",   # readability is preferred for a few sorted comprehensions
+    "E501",   # long report prose and signatures are formatted as data
+    "S110",   # best-effort optional parser cleanup
+    "S112",   # best-effort extraction continues per corrupt member
+    "S314",   # XML input is byte-bounded and stdlib ET does not resolve external entities
+    "SIM102",
+    "SIM103",
+    "SIM105",
+    "SIM114",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101", "S310"]
 
 [tool.mypy]
 python_version = "3.10"
@@ -79,6 +97,7 @@ warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
 check_untyped_defs = true
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

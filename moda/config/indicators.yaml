@@ -238,12 +238,12 @@ obfuscation_patterns:
 
   environment_variable_abuse:
     description: "Using environment variables to hide values"
-    pattern: 'Environ\(\s*["\'].+?["\']\s*\)'
+    pattern: "Environ\\(\\s*[\"'].+?[\"']\\s*\\)"
     severity: "medium"
 
   wmi_execution:
     description: "WMI-based code execution"
-    pattern: 'GetObject\(\s*["\']winmgmts:'
+    pattern: "GetObject\\(\\s*[\"']winmgmts:"
     severity: "high"
 
   scheduled_task_creation:

@@ -38,19 +38,24 @@ extraction, relationship inspection, rule matching, and configurable scoring.
 - OLE stream analysis for macro storage, ObjectPool, embedded packages, ActiveX,
   encrypted Office packages, Equation/DDE hints, high-entropy VBA streams, and
   large directory trees
-- PDF action and JavaScript keyword detection
+- Structural PDF action/object inspection with bounded raw-byte fallback
 - RTF object, DDE, and exploit-marker detection
 - Static macro heuristics for auto-run triggers, shell execution, downloaders,
   obfuscation, and native API abuse
 - Embedded payload classification for scripts, PE files, OLE objects, ActiveX,
   nested PDFs, and nested archives
 - External relationship and remote template detection
-- IOC extraction for URLs, IPs, hashes, paths, commands, and executables
+- IOC extraction for URLs, domains, public IPs, email addresses, registry keys,
+  paths, commands, and executables; file identity hashes are reported separately
 - Optional YARA scanning
 - Risk scoring
 - Console, JSON, HTML, and PDF reports
 - Local browser UI
 - Batch directory analysis with JSONL output
+- Archive decompression, member-count, string-count, IOC-count, and concurrency
+  safety budgets
+- Per-analyzer execution status with `complete`, `partial`, and `inconclusive`
+  analysis-completeness states
 
 ## Project Tour
 
@@ -78,7 +83,7 @@ Important modules:
   class, context object, and pipeline engine.
 - `src/moda/analyzers/` contains static document analyzers:
   - `file_type.py`: magic-byte, MIME, extension, and OOXML package validation.
-  - `hash_generator.py`: MD5, SHA1, SHA256 and hash IOCs.
+  - `hash_generator.py`: MD5, SHA1, and SHA256 artifact identity hashes.
   - `metadata.py`: OOXML/OLE/PDF metadata extraction where supported.
   - `ooxml.py`: DOCX/XLSX/PPTX structure, macro projects, DDE, ActiveX,
     exploit protocols, Excel links/connections/formulas, hidden sheets.
@@ -123,7 +128,12 @@ Default analyzer order:
 
 Analyzers communicate through `AnalysisContext`: they add findings, IOCs, YARA
 matches, metadata, macro strings, embedded strings, errors, and `extra` details.
-Reporters consume only the immutable `AnalysisResult` returned by the engine.
+Reporters consume a read-only result snapshot returned by the engine.
+
+Every result also records analyzer execution status. A skipped, unavailable, or
+failed capability is visible in JSON, UI, HTML, console, and PDF output. Resource
+budget failures and unsupported formats produce an `inconclusive` result rather
+than an apparently clean result.
 
 Unsupported file types are not marked clean. MODA reports them as inconclusive
 with an `Unsupported File Type` finding because the tool is document-focused and
@@ -191,6 +201,12 @@ Run batch analysis:
 PYTHONPATH=src python3.12 -m moda batch /path/to/documents --recursive --output results.jsonl --no-yara
 ```
 
+Use custom rules and scoring configuration:
+
+```bash
+PYTHONPATH=src python3.12 -m moda sample.docm --rules /path/to/rules --config /path/to/scoring.yaml
+```
+
 Check runtime readiness:
 
 ```bash
@@ -208,6 +224,10 @@ Then open:
 ```text
 http://127.0.0.1:8765
 ```
+
+Non-loopback binding is rejected by default. To deliberately expose the UI,
+use `--allow-remote` and provide `--token` or `MODA_UI_TOKEN`. Remote deployments
+should still be placed behind TLS and a trusted reverse proxy.
 
 ## YARA
 
@@ -237,7 +257,10 @@ compile errors in the analysis result instead of disabling all YARA scanning.
 ## Test
 
 ```bash
-python3.12 -m unittest discover -s tests
+pytest --cov=moda --cov-report=term-missing --cov-fail-under=75
+ruff check src tests
+mypy src
+python -m build
 ```
 
 The UI integration test binds a local ephemeral port.

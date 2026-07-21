@@ -3,9 +3,10 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
-import sys
 import logging
+import logging.config
 import os
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -59,7 +60,9 @@ def run_ui_command(argv: list[str]) -> None:
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable request logging")
     parser.add_argument("--allow-remote", action="store_true", help="Allow a non-loopback bind")
     parser.add_argument("--token", help="Remote UI access token (or MODA_UI_TOKEN)")
-    parser.add_argument("--max-concurrent", type=int, default=2, help="Maximum simultaneous analyses")
+    parser.add_argument(
+        "--max-concurrent", type=int, default=2, help="Maximum simultaneous analyses"
+    )
     args = parser.parse_args(argv)
 
     from .ui.server import run_ui
@@ -73,16 +76,22 @@ def run_ui_command(argv: list[str]) -> None:
         allow_remote=args.allow_remote,
         access_token=args.token or os.environ.get("MODA_UI_TOKEN"),
         max_concurrent_analyses=args.max_concurrent,
+        rules_dir=args.rules,
+        scoring_config=args.config,
     )
 
 
 def run_batch_command(argv: list[str]) -> None:
     parser = argparse.ArgumentParser(description="Analyze a directory of documents")
     parser.add_argument("path", help="Directory or file to analyze")
-    parser.add_argument("-o", "--output", default="moda_batch_results.jsonl", help="JSONL output path")
+    parser.add_argument(
+        "-o", "--output", default="moda_batch_results.jsonl", help="JSONL output path"
+    )
     parser.add_argument("--recursive", action="store_true", help="Recurse into subdirectories")
     parser.add_argument("--no-yara", action="store_true", help="Skip YARA scanning")
     parser.add_argument("--max-size", type=int, default=100, help="Maximum file size in MB")
+    parser.add_argument("--rules", help="Path to custom YARA rules directory")
+    parser.add_argument("--config", help="Path to scoring YAML configuration")
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose logging")
     args = parser.parse_args(argv)
     setup_logging(args.verbose)
@@ -135,7 +144,11 @@ def run_doctor_command(argv: list[str]) -> None:
         ("Python >= 3.10", sys.version_info >= (3, 10), sys.version.split()[0]),
         ("Config directory", get_config_dir().exists(), str(get_config_dir())),
         ("Rules directory", get_rules_dir().exists(), str(get_rules_dir())),
-        ("UI assets", (Path(__file__).parent / "ui" / "static" / "index.html").exists(), "static UI"),
+        (
+            "UI assets",
+            (Path(__file__).parent / "ui" / "static" / "index.html").exists(),
+            "static UI",
+        ),
     ]
     optional_modules = {
         "python-magic": "magic",
@@ -153,7 +166,10 @@ def run_doctor_command(argv: list[str]) -> None:
     for label, ok, detail in checks:
         status = "OK" if ok else "MISSING"
         print(f"{status:8} {label} ({detail})")
-        if label in {"Python >= 3.10", "Config directory", "Rules directory", "UI assets"} and not ok:
+        if (
+            label in {"Python >= 3.10", "Config directory", "Rules directory", "UI assets"}
+            and not ok
+        ):
             failed_required = True
 
     if failed_required:
@@ -178,15 +194,23 @@ def discover_input_files(path: Path, *, recursive: bool = False) -> list[Path]:
 
 
 def setup_logging(verbose: bool) -> None:
-    """Setup basic logging for CLI."""
-    level = logging.DEBUG if verbose else logging.WARNING
-    logging.basicConfig(
-        level=level,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    )
+    """Configure logging from packaged YAML with a safe fallback."""
+    try:
+        from .utils.config_loader import get_config_dir, load_yaml_config
+
+        config = load_yaml_config(get_config_dir() / "logging.yaml")
+        console_level = "DEBUG" if verbose else "WARNING"
+        config.setdefault("handlers", {}).setdefault("console", {})["level"] = console_level
+        config.setdefault("loggers", {}).setdefault("moda", {})["level"] = console_level
+        logging.config.dictConfig(config)
+    except Exception:
+        logging.basicConfig(
+            level=logging.DEBUG if verbose else logging.WARNING,
+            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        )
 
 
-def build_reporter(format_name: str, *, use_color: bool = True) -> "BaseReporter":
+def build_reporter(format_name: str, *, use_color: bool = True) -> BaseReporter:
     """Create a reporter for a CLI format name."""
     if format_name == "console":
         from .reporting.console import ConsoleReporter
@@ -208,8 +232,8 @@ def build_reporter(format_name: str, *, use_color: bool = True) -> "BaseReporter
 
 
 def emit_report(
-    result: "AnalysisResult",
-    reporter: "BaseReporter",
+    result: AnalysisResult,
+    reporter: BaseReporter,
     *,
     output: str | None,
     force_file: bool = False,
@@ -252,7 +276,13 @@ def main() -> None:
         ),
     )
     parser.add_argument("file", help="Path to the document to analyze")
-    parser.add_argument("-f", "--format", choices=["console", "json", "html", "pdf"], default="console", help="Report format")
+    parser.add_argument(
+        "-f",
+        "--format",
+        choices=["console", "json", "html", "pdf"],
+        default="console",
+        help="Report format",
+    )
     parser.add_argument("-o", "--output", help="Output file path for report")
     parser.add_argument("-r", "--rules", help="Path to custom YARA rules directory")
     parser.add_argument("-c", "--config", help="Path to custom config file")
@@ -272,7 +302,7 @@ def main() -> None:
             scoring_config=args.config,
         )
         result = engine.analyze_file(args.file)
-        
+
         reporter = build_reporter(args.format, use_color=not args.no_color)
         emit_report(
             result,
@@ -280,10 +310,10 @@ def main() -> None:
             output=args.output,
             force_file=args.format in {"html", "pdf"} and args.output is None,
         )
-            
+
         if args.format == "console":
             print("Analysis completed successfully.")
-        
+
     except MODAError as e:
         print(f"MODA Analysis Error: {e}", file=sys.stderr)
         sys.exit(1)
@@ -291,8 +321,10 @@ def main() -> None:
         print(f"Unexpected Error: {e}", file=sys.stderr)
         if args.verbose:
             import traceback
+
             traceback.print_exc()
         sys.exit(2)
+
 
 if __name__ == "__main__":
     main()

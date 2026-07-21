@@ -7,12 +7,18 @@ from ..core.context import AnalysisContext
 from ..core.enums import FileType, FindingSeverity
 from ..utils.file_utils import extract_strings
 
+
 class RTFAnalyzer(BaseAnalyzer):
     @property
-    def name(self) -> str: return "RTFAnalyzer"
+    def name(self) -> str:
+        return "RTFAnalyzer"
+
     @property
-    def description(self) -> str: return "Analyzes RTF files."
-    def can_run(self, context: AnalysisContext) -> bool: return context.file_type == FileType.RTF
+    def description(self) -> str:
+        return "Analyzes RTF files."
+
+    def can_run(self, context: AnalysisContext) -> bool:
+        return context.file_type == FileType.RTF
 
     EXPLOIT_HINTS = (
         "equation.3",
