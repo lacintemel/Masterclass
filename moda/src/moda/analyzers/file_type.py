@@ -45,6 +45,8 @@ class FileTypeDetector(BaseAnalyzer):
 
         # 1. Detect magic bytes
         base_type = self._check_magic_bytes(data)
+        if base_type is None and self._looks_like_xml(data):
+            base_type = "XML"
 
         # 2. Get MIME type
         if magic is not None:
@@ -66,6 +68,8 @@ class FileTypeDetector(BaseAnalyzer):
             file_type = FileType.PDF
         elif base_type == "RTF":
             file_type = FileType.RTF
+        elif base_type == "XML":
+            file_type = self._detect_office_xml(data, context.limits)
 
         context.file_type = file_type
 
@@ -96,12 +100,41 @@ class FileTypeDetector(BaseAnalyzer):
                 return ftype
         return None
 
+    def _looks_like_xml(self, data: bytes) -> bool:
+        sample = data[:512].lstrip(b"\xef\xbb\xbf\x00\t\r\n ")
+        if sample.startswith((b"<?xml", b"<?mso-application", b"<Workbook", b"<w:")):
+            return True
+        if data.startswith((b"\xff\xfe", b"\xfe\xff")):
+            try:
+                return data[:1024].decode("utf-16").lstrip().startswith("<")
+            except UnicodeDecodeError:
+                return False
+        return False
+
+    def _detect_office_xml(self, data: bytes, limits: AnalysisLimits) -> FileType:
+        sample = data[: limits.max_text_part_bytes]
+        if sample.startswith((b"\xff\xfe", b"\xfe\xff")):
+            text = sample.decode("utf-16", errors="ignore")
+        else:
+            text = sample.decode("utf-8-sig", errors="ignore")
+        lowered = text.lower()
+        office_markers = (
+            "<?mso-application",
+            "urn:schemas-microsoft-com:office:spreadsheet",
+            "urn:schemas-microsoft-com:office:word",
+            "schemas.microsoft.com/office/word/2003/wordml",
+            "schemas.microsoft.com/office/excel/2003/xml",
+        )
+        if any(marker in lowered for marker in office_markers):
+            return FileType.OFFICE_XML
+        return FileType.UNKNOWN
+
     def _detect_ole_subtype(self, file_path: Path, data: bytes) -> FileType:
         try:
             import olefile
 
-            if olefile.isOleFile(data):
-                with olefile.OleFileIO(data) as ole:
+            if olefile.isOleFile(data=data):
+                with olefile.OleFileIO(io.BytesIO(data)) as ole:
                     streams = {"/".join(item).lower() for item in ole.listdir()}
                 if any(name.endswith("worddocument") for name in streams):
                     return FileType.OLE_DOC
@@ -109,7 +142,7 @@ class FileTypeDetector(BaseAnalyzer):
                     return FileType.OLE_XLS
                 if any(name.endswith("powerpoint document") for name in streams):
                     return FileType.OLE_PPT
-        except (ImportError, OSError):
+        except (ImportError, OSError, TypeError, ValueError):
             pass
         ext = get_file_extension(file_path)
         if ext in ("xls", "xla", "xlt", "xlsb"):
@@ -196,6 +229,7 @@ class FileTypeDetector(BaseAnalyzer):
             "ZIP": "application/zip",
             "PDF": "application/pdf",
             "RTF": "application/rtf",
+            "XML": "application/xml",
             "PE": "application/vnd.microsoft.portable-executable",
             "ELF": "application/x-elf",
         }.get(base_type or "", "application/octet-stream")
@@ -228,6 +262,9 @@ class FileTypeDetector(BaseAnalyzer):
                 mismatch = True
         elif ftype == FileType.PDF:
             if ext != "pdf":
+                mismatch = True
+        elif ftype == FileType.OFFICE_XML:
+            if ext != "xml":
                 mismatch = True
 
         if mismatch:

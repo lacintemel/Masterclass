@@ -130,7 +130,7 @@ class MacroAnalyzer(BaseAnalyzer):
             return []
         strings: list[str] = []
         try:
-            with olefile.OleFileIO(context.file_bytes) as ole:
+            with olefile.OleFileIO(io.BytesIO(context.file_bytes)) as ole:
                 for stream in ole.listdir(streams=True, storages=False):
                     stream_name = "/".join(stream).lower()
                     if "vba" in stream_name or stream_name.endswith(("/dir", "/project")):

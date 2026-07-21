@@ -5,6 +5,7 @@ from .file_type import FileTypeDetector
 from .hash_generator import HashGenerator
 from .macro import MacroAnalyzer
 from .metadata import MetadataAnalyzer
+from .office_xml import OfficeXMLAnalyzer
 from .ole import OLEAnalyzer
 from .ooxml import OOXMLAnalyzer
 from .pdf import PDFAnalyzer
@@ -17,6 +18,7 @@ __all__ = [
     "MetadataAnalyzer",
     "OLEAnalyzer",
     "OOXMLAnalyzer",
+    "OfficeXMLAnalyzer",
     "RTFAnalyzer",
     "PDFAnalyzer",
     "MacroAnalyzer",

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import xml.etree.ElementTree as ET
 import zipfile
 from importlib import import_module
@@ -50,6 +51,8 @@ class MetadataAnalyzer(BaseAnalyzer):
 
         if ftype in (FileType.OLE_DOC, FileType.OLE_XLS, FileType.OLE_PPT):
             metadata = self._extract_ole_metadata(context)
+        elif ftype is FileType.OFFICE_XML:
+            metadata = dict(context.metadata)
         elif ftype in (
             FileType.OOXML_DOCX,
             FileType.OOXML_DOCM,
@@ -70,8 +73,8 @@ class MetadataAnalyzer(BaseAnalyzer):
         try:
             if olefile is None:
                 return metadata
-            if olefile.isOleFile(context.file_bytes):
-                with olefile.OleFileIO(context.file_bytes) as ole:
+            if olefile.isOleFile(data=context.file_bytes):
+                with olefile.OleFileIO(io.BytesIO(context.file_bytes)) as ole:
                     meta = ole.get_metadata()
                     metadata["Author"] = (
                         meta.author.decode("utf-8", errors="ignore") if meta.author else None
@@ -99,9 +102,6 @@ class MetadataAnalyzer(BaseAnalyzer):
     def _extract_ooxml_metadata(self, context: AnalysisContext) -> dict:
         metadata: dict[str, Any] = {}
         try:
-            # Note: We simulate reading zip from memory
-            import io
-
             with zipfile.ZipFile(io.BytesIO(context.file_bytes)) as z:
                 validate_zip_archive(z, context.limits)
                 if "docProps/core.xml" in z.namelist():

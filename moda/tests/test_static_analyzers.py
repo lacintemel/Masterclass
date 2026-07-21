@@ -50,6 +50,57 @@ def build_ooxml_package(path: Path, files: dict[str, str | bytes]) -> None:
 
 
 class StaticAnalyzerTests(unittest.TestCase):
+    def test_legacy_ole_extensions_reach_detection_and_macro_analysis(self) -> None:
+        payload = (
+            b"\xd0\xcf\x11\xe0\x00\x00\x00\x00"
+            b"Sub AutoOpen CreateObject WScript.Shell powershell cmd.exe"
+        )
+        expected_types = {
+            "sample.xls": "ole_xls",
+            "sample.pps": "ole_ppt",
+            "sample.ppt": "ole_ppt",
+        }
+        for filename, expected_type in expected_types.items():
+            with self.subTest(filename=filename):
+                result = analyze_bytes(filename, payload)
+                titles = {finding.title for finding in result.findings}
+                self.assertEqual(result.file_type, expected_type)
+                self.assertIn("VBA Macros Present", titles)
+                self.assertIn("Macro Auto-Execution Trigger", titles)
+                self.assertIn("Macro Process Execution", titles)
+                self.assertGreater(result.risk_score, 0)
+
+    def test_office_2003_xml_external_command_and_dde_content_is_flagged(self) -> None:
+        payload = (
+            b'<?xml version="1.0"?>\n'
+            b'<?mso-application progid="Excel.Sheet"?>\n'
+            b'<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" '
+            b'xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet" '
+            b'xmlns:o="urn:schemas-microsoft-com:office:office">'
+            b"<o:DocumentProperties><o:Author>admin</o:Author></o:DocumentProperties>"
+            b'<Worksheet ss:Name="Sheet1"><Table><Row>'
+            b'<Cell ss:HRef="http://evil.example/payload"><Data ss:Type="String">'
+            b"Auto_Open DDEAUTO powershell cmd.exe"
+            b"</Data></Cell></Row></Table></Worksheet>"
+            b"</Workbook>"
+        )
+        result = analyze_bytes("suspicious.xml", payload)
+        titles = {finding.title for finding in result.findings}
+        self.assertEqual(result.file_type, "office_xml")
+        self.assertIn("Office XML External Link", titles)
+        self.assertIn("Suspicious Command Text In Office XML", titles)
+        self.assertIn("Office XML DDE Field", titles)
+        self.assertIn("Office XML Macro Or Auto-Execution Marker", titles)
+        self.assertEqual(result.metadata["Author"], "admin")
+        self.assertIn("Suspicious Document Author", titles)
+        self.assertGreater(result.risk_score, 0)
+
+    def test_generic_xml_is_not_misclassified_as_office_xml(self) -> None:
+        result = analyze_bytes("generic.xml", b'<?xml version="1.0"?><root>hello</root>')
+        titles = {finding.title for finding in result.findings}
+        self.assertEqual(result.file_type, "unknown")
+        self.assertIn("Unsupported File Type", titles)
+
     def test_pdf_suspicious_actions_are_flagged(self) -> None:
         result = analyze_bytes(
             "suspicious.pdf",

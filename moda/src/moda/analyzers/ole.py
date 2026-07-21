@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import re
 from typing import Any
 
@@ -72,11 +73,10 @@ class OLEAnalyzer(BaseAnalyzer):
             context.errors.append("OLE parsing skipped: olefile is not installed")
             context.extra.setdefault("capability_overrides", {})[self.name] = "unavailable"
             return
-        if not olefile.isOleFile(context.file_bytes):
-            return
-
         try:
-            with olefile.OleFileIO(context.file_bytes) as ole:
+            if not olefile.isOleFile(data=context.file_bytes):
+                return
+            with olefile.OleFileIO(io.BytesIO(context.file_bytes)) as ole:
                 self._inspect_streams(context, ole)
                 self._check_vba_storage(context, ole)
                 self._check_activex(context, ole)

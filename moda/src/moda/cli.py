@@ -12,41 +12,11 @@ from typing import TYPE_CHECKING
 
 from .core.engine import AnalyzerEngine
 from .core.exceptions import MODAError
+from .core.file_support import SUPPORTED_EXTENSIONS
 
 if TYPE_CHECKING:
     from .core.models import AnalysisResult
     from .reporting.base import BaseReporter
-
-SUPPORTED_EXTENSIONS = {
-    ".doc",
-    ".dot",
-    ".xls",
-    ".ppt",
-    ".pps",
-    ".pot",
-    ".ppa",
-    ".docx",
-    ".docm",
-    ".dotx",
-    ".dotm",
-    ".xlsx",
-    ".xlsm",
-    ".xlsb",
-    ".xla",
-    ".xlt",
-    ".xlam",
-    ".xltx",
-    ".xltm",
-    ".pptx",
-    ".pptm",
-    ".ppsx",
-    ".ppsm",
-    ".potx",
-    ".potm",
-    ".ppam",
-    ".rtf",
-    ".pdf",
-}
 
 
 def run_ui_command(argv: list[str]) -> None:

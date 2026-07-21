@@ -51,6 +51,7 @@ class AnalyzerEngine:
             HashGenerator,
             MacroAnalyzer,
             MetadataAnalyzer,
+            OfficeXMLAnalyzer,
             OLEAnalyzer,
             OOXMLAnalyzer,
             PDFAnalyzer,
@@ -65,6 +66,7 @@ class AnalyzerEngine:
         self.register_analyzer(HashGenerator())
 
         # Stage 3-4: Structure
+        self.register_analyzer(OfficeXMLAnalyzer())
         self.register_analyzer(MetadataAnalyzer())
         self.register_analyzer(OLEAnalyzer())
         self.register_analyzer(OOXMLAnalyzer())

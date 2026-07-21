@@ -26,6 +26,7 @@ class FileType(Enum):
     OOXML_XLSM = "ooxml_xlsm"
     OOXML_PPTX = "ooxml_pptx"
     OOXML_PPTM = "ooxml_pptm"
+    OFFICE_XML = "office_xml"
     RTF = "rtf"
     PDF = "pdf"
     UNKNOWN = "unknown"
@@ -77,6 +78,7 @@ class FileType(Enum):
             FileType.OOXML_XLSM: "OOXML Excel Macro-Enabled (.xlsm)",
             FileType.OOXML_PPTX: "OOXML PowerPoint Presentation (.pptx)",
             FileType.OOXML_PPTM: "OOXML PowerPoint Macro-Enabled (.pptm)",
+            FileType.OFFICE_XML: "Microsoft Office XML Document (.xml)",
             FileType.RTF: "Rich Text Format (.rtf)",
             FileType.PDF: "PDF Document (.pdf)",
             FileType.UNKNOWN: "Unknown File Type",
