@@ -139,3 +139,10 @@ class FileTooLargeError(MODAError):
             f"File '{self.file_path.name}' is too large for analysis: "
             f"{file_mb:.1f} MB (limit: {max_mb:.1f} MB)"
         )
+
+
+class ResourceLimitError(MODAError):
+    """Raised when decompression or extraction exceeds a safety budget."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(f"Analysis resource limit exceeded: {message}")

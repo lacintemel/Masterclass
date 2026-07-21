@@ -20,7 +20,7 @@ from typing import Any
 
 from moda.core.context import AnalysisContext
 from moda.core.enums import FindingSeverity, IOCType
-from moda.core.exceptions import AnalyzerError
+from moda.core.exceptions import AnalyzerError, ResourceLimitError
 from moda.core.models import Finding, IOC
 
 
@@ -100,7 +100,7 @@ class BaseAnalyzer(ABC):
         start = time.perf_counter()
         try:
             self.analyze(context)
-        except AnalyzerError:
+        except (AnalyzerError, ResourceLimitError):
             raise
         except Exception as exc:
             self.logger.exception("Unhandled error in %s", self.name)

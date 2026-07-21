@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from moda.core.enums import FileType, RiskLevel
+from moda.core.limits import AnalysisLimits
 from moda.core.models import AnalysisResult, Finding, IOC, YaraMatch
 from moda.utils.file_utils import extract_strings
 
@@ -46,7 +47,12 @@ class AnalysisContext:
     # Construction
     # ------------------------------------------------------------------
 
-    def __init__(self, file_path: str | Path, file_bytes: bytes) -> None:
+    def __init__(
+        self,
+        file_path: str | Path,
+        file_bytes: bytes,
+        limits: AnalysisLimits | None = None,
+    ) -> None:
         # File identity
         self.file_path: Path = Path(file_path).resolve()
         self.file_bytes: bytes = file_bytes
@@ -56,6 +62,7 @@ class AnalysisContext:
         self.file_type: FileType = FileType.UNKNOWN
         self.file_hash: str = hashlib.sha256(file_bytes).hexdigest()
         self.hashes: dict[str, str] = {"SHA256": self.file_hash}
+        self.limits = limits or AnalysisLimits()
 
         # Metadata & textual content
         self.metadata: dict[str, Any] = {}
@@ -154,8 +161,13 @@ class AnalysisContext:
             parts.extend(str(value) for value in finding.details.values())
 
         if not self.raw_strings:
-            self.raw_strings = extract_strings(self.file_bytes)
-        parts.extend(self.raw_strings)
+            self.raw_strings = extract_strings(
+                self.file_bytes,
+                max_strings=self.limits.max_extracted_strings,
+                max_string_length=self.limits.max_string_length,
+            )
+        if not parts or parts[-len(self.raw_strings):] != self.raw_strings:
+            parts.extend(self.raw_strings)
         return "\n".join(parts)
 
     # ------------------------------------------------------------------
