@@ -7,9 +7,14 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Generator
 
-def safe_read_file(path: Path, max_size_mb: int = 100) -> bytes:
+def safe_read_file(
+    path: Path,
+    max_size_mb: int = 100,
+    *,
+    max_size_bytes: int | None = None,
+) -> bytes:
     """Read a file safely, ensuring it doesn't exceed the maximum size."""
-    max_bytes = max_size_mb * 1024 * 1024
+    max_bytes = max_size_bytes or max_size_mb * 1024 * 1024
     if path.stat().st_size > max_bytes:
         raise ValueError(f"File exceeds maximum size of {max_size_mb}MB")
     return path.read_bytes()
@@ -18,21 +23,31 @@ def get_file_extension(path: Path) -> str:
     """Get lowercase file extension without dot."""
     return path.suffix.lower().lstrip('.')
 
-def extract_strings(data: bytes, min_length: int = 4) -> list[str]:
-    """Extract ASCII and Unicode strings from binary data."""
+def extract_strings(
+    data: bytes,
+    min_length: int = 4,
+    *,
+    max_strings: int = 10_000,
+    max_string_length: int = 16_384,
+) -> list[str]:
+    """Extract a bounded number of bounded-length ASCII and UTF-16LE strings."""
     import re
     # Simple ASCII and Unicode extraction
     ascii_pattern = re.compile(rb'[\x20-\x7E]{' + str(min_length).encode() + rb',}')
     unicode_pattern = re.compile(rb'(?:[\x20-\x7E]\x00){' + str(min_length).encode() + rb',}')
     
-    strings = []
+    strings: list[str] = []
     for match in ascii_pattern.finditer(data):
-        strings.append(match.group().decode('ascii', errors='ignore'))
+        strings.append(match.group()[:max_string_length].decode('ascii', errors='ignore'))
+        if len(strings) >= max_strings:
+            return strings
         
     for match in unicode_pattern.finditer(data):
         # Decode utf-16-le
-        s = match.group().decode('utf-16-le', errors='ignore')
+        s = match.group()[: max_string_length * 2].decode('utf-16-le', errors='ignore')
         strings.append(s)
+        if len(strings) >= max_strings:
+            break
         
     return strings
 
@@ -42,8 +57,11 @@ def calculate_entropy(data: bytes) -> float:
         return 0.0
     
     entropy = 0.0
-    for x in range(256):
-        p_x = float(data.count(x)) / len(data)
+    counts = [0] * 256
+    for value in data:
+        counts[value] += 1
+    for count in counts:
+        p_x = float(count) / len(data)
         if p_x > 0:
             entropy += - p_x * math.log(p_x, 2)
     return entropy

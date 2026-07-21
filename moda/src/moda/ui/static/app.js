@@ -5,6 +5,7 @@ const state = {
   health: "checking",
   isAnalyzing: false,
   isPreparingPdf: false,
+  accessToken: new URLSearchParams(window.location.search).get("token") || "",
 };
 
 const translations = {
@@ -68,6 +69,9 @@ const translations = {
     jsonCopied: "JSON copied",
     reportFailed: "Report failed",
     analysisFailed: "Analysis failed",
+    complete: "complete",
+    partial: "partial analysis",
+    inconclusive: "inconclusive",
     risk: {
       low: "low",
       medium: "medium",
@@ -142,6 +146,9 @@ const translations = {
     jsonCopied: "JSON kopyalandı",
     reportFailed: "Rapor oluşturulamadı",
     analysisFailed: "Analiz başarısız",
+    complete: "tamamlandı",
+    partial: "kısmi analiz",
+    inconclusive: "sonuçlandırılamadı",
     risk: {
       low: "düşük",
       medium: "orta",
@@ -274,6 +281,10 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
+function apiHeaders(extra = {}) {
+  return state.accessToken ? { ...extra, "X-MODA-Token": state.accessToken } : extra;
+}
+
 function drawRisk(score = 0, level = "low", components = []) {
   const ctx = el.riskCanvas.getContext("2d");
   const size = el.riskCanvas.width;
@@ -378,10 +389,10 @@ async function analyze() {
     params.set("yara", el.yaraToggle.checked ? "1" : "0");
     const response = await fetch(`/api/analyze?${params.toString()}`, {
       method: "POST",
-      headers: {
+      headers: apiHeaders({
         "Content-Type": "application/octet-stream",
         "X-Filename": encodeURIComponent(state.file.name),
-      },
+      }),
       body: await state.file.arrayBuffer(),
     });
     const payload = await response.json();
@@ -438,7 +449,8 @@ function renderResult(result) {
   const components = risk.breakdown?.components || [];
   drawRisk(score, level, components);
   el.riskScore.textContent = String(score);
-  el.riskLabel.textContent = riskLabel(level);
+  const analysisStatus = risk.analysis_status || result.extra?.analysis_status || "complete";
+  el.riskLabel.textContent = `${riskLabel(level)} • ${t(analysisStatus)}`;
   el.resultTitle.textContent = fileInfo.file_name || t("analysisComplete");
   const findings = result.findings || [];
   const riskFindingCount = findings.filter((finding) => finding.title !== "OLE Stream Inventory").length;
@@ -845,7 +857,7 @@ function listMarkup(items) {
 }
 
 function renderYaraMatches(matches, errors) {
-  const yaraErrors = errors.filter((item) => String(item).toLowerCase().includes("yara"));
+  const yaraErrors = errors;
   if (!matches.length && !yaraErrors.length) {
     el.yaraList.className = "empty-state";
     el.yaraList.textContent = t("noYaraMatches");
@@ -977,15 +989,16 @@ el.downloadPdfBtn.addEventListener("click", async () => {
   el.downloadPdfBtn.textContent = t("preparing");
   try {
     const params = new URLSearchParams();
-    params.set("yara", el.yaraToggle.checked ? "1" : "0");
     params.set("lang", state.lang === "tr" ? "tr" : "en");
+    const analysisId = state.result.extra?.analysis_id;
+    if (analysisId) params.set("analysis_id", analysisId);
     const response = await fetch(`/api/report?${params.toString()}`, {
       method: "POST",
-      headers: {
+      headers: apiHeaders({
         "Content-Type": "application/octet-stream",
         "X-Filename": encodeURIComponent(state.file.name),
-      },
-      body: await state.file.arrayBuffer(),
+      }),
+      body: analysisId ? null : await state.file.arrayBuffer(),
     });
     if (!response.ok) {
       const payload = await response.json().catch(() => ({}));

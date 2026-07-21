@@ -51,9 +51,9 @@ def load_yaml_config(path: Path) -> Dict[str, Any]:
     with path.open('r', encoding='utf-8') as f:
         return yaml.safe_load(f)
 
-def load_scoring_config() -> Dict[str, Any]:
+def load_scoring_config(path: Path | None = None) -> Dict[str, Any]:
     """Load the scoring configuration."""
-    return load_yaml_config(get_config_dir() / "scoring.yaml")
+    return load_yaml_config(path or get_config_dir() / "scoring.yaml")
 
 def load_indicators_config() -> Dict[str, Any]:
     """Load the indicators configuration."""

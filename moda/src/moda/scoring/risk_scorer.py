@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from ..core.base import BaseAnalyzer
 from ..core.context import AnalysisContext
 from ..core.enums import RiskLevel, FindingSeverity
@@ -50,9 +52,9 @@ class RiskScorer(BaseAnalyzer):
         },
     }
 
-    def __init__(self):
+    def __init__(self, config_path: str | Path | None = None):
         super().__init__()
-        self.config = load_scoring_config()
+        self.config = load_scoring_config(Path(config_path) if config_path else None)
         self.weights = self.config.get('severity_weights', {})
         self.levels = self.config.get('risk_levels', {})
         self.max_score = self.config.get('max_score', 100)
@@ -74,32 +76,51 @@ class RiskScorer(BaseAnalyzer):
             FindingSeverity.CRITICAL: self.weights.get("critical", 50),
         }
 
-        finding_score = 0
+        finding_score = 0.0
         components: dict[str, dict[str, object]] = {}
         finding_details: list[dict[str, object]] = []
+        category_weights = self.config.get("category_weights", {})
+        category_caps = self.config.get("category_caps", {})
+        category_totals: dict[str, float] = {}
 
         for finding in context.findings:
-            points = severity_weights.get(finding.severity, 0)
             category = self._category_for_finding(finding.analyzer, finding.title)
-            self._add_component_points(components, category, points, finding.title)
-            finding_score += points
+            base_points = float(severity_weights.get(finding.severity, 0))
+            multiplier = float(category_weights.get(category, 1.0))
+            points = base_points * multiplier
+            category_totals[category] = category_totals.get(category, 0.0) + points
             finding_details.append(
                 {
                     "title": finding.title,
                     "severity": finding.severity.name.lower(),
                     "analyzer": finding.analyzer,
                     "category": category,
-                    "points": points,
+                    "base_points": base_points,
+                    "multiplier": multiplier,
+                    "points": round(points, 2),
                 }
             )
 
-        yara_points_per_match = self.config.get("category_caps", {}).get("yara", 30)
-        yara_score = 0
-        for match in context.yara_matches:
-            yara_score += yara_points_per_match
-            self._add_component_points(components, "yara", yara_points_per_match, match.rule_name)
+        for category, raw_points in category_totals.items():
+            cap = float(category_caps.get(category, self.max_score))
+            capped_points = min(raw_points, cap)
+            finding_score += capped_points
+            reasons = [
+                str(detail["title"])
+                for detail in finding_details
+                if detail["category"] == category
+            ]
+            for index, reason in enumerate(reasons):
+                self._add_component_points(
+                    components,
+                    category,
+                    capped_points if index == 0 else 0,
+                    reason,
+                )
 
-        raw_score = finding_score + yara_score
+        compound_score = self._apply_compound_indicators(components, category_totals)
+
+        raw_score = finding_score + compound_score
         if context.extra.get("unsupported_file_type") and raw_score < 26:
             adjustment = 26 - raw_score
             raw_score += adjustment
@@ -109,7 +130,7 @@ class RiskScorer(BaseAnalyzer):
                 adjustment,
                 "Unsupported analysis scope",
             )
-        score = min(raw_score, self.max_score)
+        score = round(min(raw_score, self.max_score), 2)
         self._normalize_components(components, score)
 
         # Determine risk level
@@ -117,7 +138,8 @@ class RiskScorer(BaseAnalyzer):
         for level_name, thresholds in self.levels.items():
             min_score = thresholds.get("min_score", thresholds.get("min", 0))
             max_score = thresholds.get("max_score", thresholds.get("max", self.max_score))
-            if min_score <= score <= max_score:
+            upper_inclusive = max_score >= self.max_score
+            if min_score <= score and (score <= max_score if upper_inclusive else score < max_score):
                 risk_level = RiskLevel[level_name.upper()]
                 break
                 
@@ -125,7 +147,8 @@ class RiskScorer(BaseAnalyzer):
             score,
             risk_level,
             {
-                "finding_score": min(finding_score, self.max_score),
+                "finding_score": round(min(finding_score, self.max_score), 2),
+                "compound_score": round(compound_score, 2),
                 "raw_score": raw_score,
                 "max_score": self.max_score,
                 "findings_count": len(context.findings),
@@ -142,7 +165,7 @@ class RiskScorer(BaseAnalyzer):
         self,
         components: dict[str, dict[str, object]],
         category: str,
-        points: int,
+        points: float,
         reason: str,
     ) -> None:
         meta = self.CATEGORY_META.get(category, self.CATEGORY_META["other"])
@@ -158,7 +181,7 @@ class RiskScorer(BaseAnalyzer):
                 "reasons": [],
             },
         )
-        component["points"] = int(component["points"]) + points
+        component["points"] = float(component["points"]) + points
         reasons = component["reasons"]
         if isinstance(reasons, list) and reason not in reasons:
             reasons.append(reason)
@@ -166,17 +189,37 @@ class RiskScorer(BaseAnalyzer):
     def _normalize_components(
         self,
         components: dict[str, dict[str, object]],
-        score: int,
+        score: float,
     ) -> None:
-        total_points = sum(int(component["points"]) for component in components.values())
+        total_points = sum(float(component["points"]) for component in components.values())
         for component in components.values():
-            raw_points = int(component["points"])
+            raw_points = float(component["points"])
             if total_points > self.max_score and total_points:
                 display_points = round((raw_points / total_points) * score, 2)
             else:
                 display_points = raw_points
             component["points"] = display_points
             component["percentage"] = round((display_points / self.max_score) * 100, 2)
+
+    def _apply_compound_indicators(
+        self,
+        components: dict[str, dict[str, object]],
+        category_totals: dict[str, float],
+    ) -> float:
+        present = {category for category, points in category_totals.items() if points > 0}
+        total = 0.0
+        for compound in self.config.get("compound_indicators", []):
+            required = set(compound.get("required_categories", []))
+            if required and required.issubset(present):
+                bonus = float(compound.get("bonus_score", 0))
+                total += bonus
+                self._add_component_points(
+                    components,
+                    "other",
+                    bonus,
+                    f"Compound: {compound.get('name', 'combined indicators')}",
+                )
+        return total
 
     def _category_for_finding(self, analyzer: str, title: str) -> str:
         lowered = f"{analyzer} {title}".lower()
