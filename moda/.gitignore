@@ -1,0 +1,13 @@
+.coverage
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.venv/
+.env
+!.env.example
+__pycache__/
+*.egg-info/
+build/
+dist/
+quarantine/*
+!quarantine/.gitkeep

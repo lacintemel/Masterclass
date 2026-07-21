@@ -1,0 +1,10 @@
+.git
+.venv
+.coverage
+.mypy_cache
+.pytest_cache
+.ruff_cache
+build
+dist
+quarantine
+__pycache__

@@ -13,6 +13,8 @@ rendering the submitted document.
 - Office Open XML documents: `.docx`, `.docm`, `.dotx`, `.dotm`, `.xlsx`,
   `.xlsm`, `.xlsb`, `.xltx`, `.xltm`, `.xlam`, `.pptx`, `.pptm`, `.ppsx`,
   `.ppsm`, `.potx`, `.potm`, `.ppam`
+- Microsoft Office 2003 XML / SpreadsheetML documents: `.xml` when an Office
+  namespace or `mso-application` declaration is present
 - Rich Text Format: `.rtf`
 - PDFs: `.pdf`
 
@@ -51,6 +53,8 @@ extraction, relationship inspection, rule matching, and configurable scoring.
 - Risk scoring
 - Console, JSON, HTML, and PDF reports
 - Local browser UI
+- Local SMTP security gateway simulation with Mailpit, quarantine, health checks,
+  and a separate administration dashboard
 - Batch directory analysis with JSONL output
 - Archive decompression, member-count, string-count, IOC-count, and concurrency
   safety budgets
@@ -87,6 +91,8 @@ Important modules:
   - `metadata.py`: OOXML/OLE/PDF metadata extraction where supported.
   - `ooxml.py`: DOCX/XLSX/PPTX structure, macro projects, DDE, ActiveX,
     exploit protocols, Excel links/connections/formulas, hidden sheets.
+  - `office_xml.py`: Office 2003 XML/SpreadsheetML external links, commands,
+    DDE, auto-execution markers, metadata, and embedded encoded data.
   - `ole.py`: legacy DOC/XLS/PPT stream inspection, VBA storage, ObjectPool,
     packages, ActiveX, encrypted packages, Equation/DDE hints.
   - `macro.py`: static macro string extraction and heuristics for auto-run,
@@ -104,6 +110,9 @@ Important modules:
 - `src/moda/reporting/` renders console, JSON, HTML, and dependency-free PDF
   reports.
 - `src/moda/ui/` is a local browser UI served by a small stdlib HTTP server.
+- `src/moda/gateway/` contains the SMTP policy processor, bounded MIME parser,
+  direct analyzer adapter, relay, quarantine store, health endpoint, and local
+  administration UI.
 - `rules/` contains built-in, custom, external, and community YARA rules.
 - `tests/` contains regression tests for analyzers, reporting, UI, CLI, and
   YARA rule compilation/matching.
@@ -264,6 +273,187 @@ python -m build
 ```
 
 The UI integration test binds a local ephemeral port.
+
+## Local SMTP Security Gateway
+
+The repository includes a development-only SMTP gateway simulation. It accepts
+mail on `localhost:2525`, scans Office attachments with MODA, and applies this
+policy:
+
+```text
+test mail client -> gateway :2525 -> MIME/attachment limits -> MODA
+                                                   | safe       -> Mailpit :1025
+                                                   | suspicious -> quarantine + SMTP 250
+                                                   | malicious  -> quarantine + SMTP 550
+```
+
+`malicious` has priority over `suspicious`, which has priority over `safe`. A
+message without Office attachments is in scope for relay and is considered safe.
+Non-Office attachments are recorded but not classified by MODA. The original raw
+message and SMTP envelope sender/recipients are preserved during safe relay.
+
+This is a local demonstration and testing gateway. It is not hardened or
+supported as a production MTA, Internet-facing MX, data-loss prevention product,
+or malware sandbox.
+
+### Start with Docker
+
+Docker and Docker Compose are required. Optional local settings can be copied
+from `.env.example`:
+
+```bash
+cp .env.example .env
+docker compose up --build
+```
+
+Compose publishes every service only on the host loopback interface:
+
+- SMTP gateway: `localhost:2525`
+- Gateway health: <http://localhost:8080/health>
+- Gateway administration UI: <http://localhost:8081>
+- Mailpit mailbox UI: <http://localhost:8025>
+
+Inside the Compose network, the gateway relays to `mailpit:1025`. Only messages
+with recipients in `ACCEPTED_RECIPIENT_DOMAINS` are accepted, preventing use as
+an open relay. The administration UI binds to `0.0.0.0` only inside its container;
+the Docker host publication remains `127.0.0.1`.
+
+### Send harmless test messages
+
+Simulation mode is enabled by default. These commands create only inert text
+attachments; no malware is generated or used:
+
+```bash
+python send_test_mail.py safe
+python send_test_mail.py suspicious
+python send_test_mail.py malicious
+```
+
+Expected behavior:
+
+| Test | SMTP result | Mailpit | Quarantine |
+|---|---|---|---|
+| safe | `250 2.0.0` | delivered | no |
+| suspicious | `250 2.0.0` | not delivered | `.eml` + `.json` |
+| malicious | `550 5.7.1` | not delivered | `.eml` + `.json` |
+
+The malicious simulation uses only the literal marker
+`MDOA_TEST_MALICIOUS`. A filename containing `suspicious` produces the middle
+verdict. Quarantine records are visible in the administration UI and under the
+host `quarantine/` directory.
+
+Run gateway tests inside the container:
+
+```bash
+docker compose exec gateway pytest
+```
+
+### Run without Docker
+
+Start a local SMTP sink such as Mailpit on port 1025, install the project, and
+keep the administration UI on loopback:
+
+```bash
+export SIMULATE_ANALYZER=true
+export ACCEPTED_RECIPIENT_DOMAINS=example.test
+export QUARANTINE_PATH="$PWD/quarantine"
+moda-gateway
+```
+
+`WEB_UI_HOST` must be `127.0.0.1`, `::1`, or `localhost` outside a container.
+The gateway does not depend on either of MODA's browser interfaces to process
+SMTP traffic.
+
+### Configuration
+
+| Variable | Default | Purpose |
+|---|---:|---|
+| `SMTP_LISTEN_HOST` | `127.0.0.1` | SMTP bind address |
+| `SMTP_LISTEN_PORT` | `2525` | SMTP gateway port |
+| `RELAY_HOST` | `127.0.0.1` | downstream SMTP server |
+| `RELAY_PORT` | `1025` | downstream SMTP port |
+| `HEALTH_HOST` / `HEALTH_PORT` | `127.0.0.1` / `8080` | health endpoint bind |
+| `WEB_UI_HOST` / `WEB_UI_PORT` | `127.0.0.1` / `8081` | admin UI bind |
+| `SIMULATE_ANALYZER` | `true` | harmless deterministic verdict mode |
+| `ANALYZER_TIMEOUT_SECONDS` | `30` | maximum caller wait for a scan |
+| `MAX_MESSAGE_BYTES` | `26214400` | maximum raw SMTP message size |
+| `MAX_ATTACHMENT_BYTES` | `20971520` | maximum decoded attachment size |
+| `MAX_ATTACHMENTS` | `20` | maximum attachment count |
+| `ACCEPTED_RECIPIENT_DOMAINS` | `example.test` | comma-separated exact recipient domains |
+| `QUARANTINE_PATH` | `quarantine` | protected `.eml`/`.json` storage |
+| `SKIP_YARA` | `false` | disable YARA only when explicitly required |
+
+`.env.example` also documents `ANALYZER_URL` as a reserved compatibility value.
+The current repository already exposes a safe Python API, so the gateway invokes
+`AnalyzerEngine` directly and does not add an unnecessary HTTP analyzer service.
+No credentials or secrets are required or committed.
+
+### Real analyzer mode and failure policy
+
+Set `SIMULATE_ANALYZER=false` to analyze Office attachments with the in-process
+MODA engine. Risk levels map as follows:
+
+- low + complete analysis -> `safe`
+- medium or partial/inconclusive analysis -> `suspicious`
+- high or critical -> `malicious`
+
+Analyzer exceptions, timeouts, invalid/unrecognized results, malformed MIME, and
+invalid base64 never become `safe`. Transient scan failures return
+`451 4.7.0`; downstream relay failures return `451 4.4.1`. Message, attachment,
+attachment-count, archive expansion, nested payload, string, and IOC budgets limit
+resource use. Logs are JSON event records and never contain attachment bytes or
+the full message body.
+
+The health response distinguishes SMTP, analyzer, and relay state:
+
+```json
+{"status":"healthy","smtp":true,"analyzer":true,"relay":true}
+```
+
+If Mailpit is unavailable, status becomes `degraded` and `relay` is `false`.
+
+### Quarantine and administration
+
+Each suspicious or malicious message creates an opaque UUID pair:
+
+```text
+quarantine/<id>.eml
+quarantine/<id>.json
+```
+
+The JSON record contains envelope metadata, subject, message verdict, attachment
+names, MIME types, sizes, SHA-256 hashes, scores, analyzer completeness, and
+reasons. Original attachment filenames are never used as filesystem paths.
+Writes are atomic and files are created with owner-only permissions where the
+platform supports them.
+
+The local administration UI provides dashboard counters, recent events,
+quarantine listing/detail, controlled raw `.eml` download, and CSRF-protected
+deletion. It deliberately offers no Office attachment preview.
+
+### Common gateway problems
+
+- `451 4.4.1`: Mailpit or the configured relay is unavailable. Check
+  `docker compose ps` and the health endpoint.
+- `451 4.7.0`: parsing or analysis did not complete safely. Retry after checking
+  the structured `analysis_failed` event.
+- `550 5.7.1 Relaying denied`: the recipient domain is not in
+  `ACCEPTED_RECIPIENT_DOMAINS`.
+- `552 5.3.4`: the raw message, decoded attachment, or attachment count exceeded
+  a configured safety limit.
+- Admin UI refuses to start outside Docker: use a loopback `WEB_UI_HOST`.
+
+### Path toward a real MX deployment
+
+For a future production design, keep MODA as a bounded scanning service and put a
+mature MTA such as Postfix at the Internet boundary. Postfix should own MX/TLS,
+SMTP authentication, queueing, retries, back-pressure, recipient verification,
+rate limits, anti-spam controls, and durable delivery. Integrate scanning through
+a well-defined content-filter/milter boundary, run analysis in isolated workers,
+store quarantine in authenticated durable storage, add role-based administration
+and audit logs, pin container images, monitor queues and latency, and perform a
+formal threat model and load test. The included Python gateway should remain a
+local simulation rather than being promoted directly to that role.
 
 ## Agent Handoff Notes
 
