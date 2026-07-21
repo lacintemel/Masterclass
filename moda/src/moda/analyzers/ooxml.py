@@ -9,6 +9,8 @@ from urllib.parse import unquote
 from ..core.base import BaseAnalyzer
 from ..core.context import AnalysisContext
 from ..core.enums import FileType, FindingSeverity
+from ..core.exceptions import ResourceLimitError
+from ..utils.archive_utils import read_zip_member, validate_zip_archive
 
 class OOXMLAnalyzer(BaseAnalyzer):
     @property
@@ -29,6 +31,7 @@ class OOXMLAnalyzer(BaseAnalyzer):
     def analyze(self, context: AnalysisContext) -> None:
         try:
             with zipfile.ZipFile(io.BytesIO(context.file_bytes)) as z:
+                validate_zip_archive(z, context.limits)
                 files = z.namelist()
                 lowered_files = {name.lower(): name for name in files}
                 context.extra["ooxml_package"] = self._package_profile(files)
@@ -62,7 +65,7 @@ class OOXMLAnalyzer(BaseAnalyzer):
 
                 self._inspect_xml_parts(context, z)
                 self._inspect_excel_parts(context, z)
-        except Exception as e:
+        except zipfile.BadZipFile as e:
             context.errors.append(f"OOXML parsing error: {e}")
 
     def _package_profile(self, files: list[str]) -> dict[str, object]:
@@ -90,7 +93,11 @@ class OOXMLAnalyzer(BaseAnalyzer):
             if not lowered_name.endswith((".xml", ".rels")):
                 continue
             try:
-                text = archive.read(name).decode("utf-8", errors="ignore")
+                text = read_zip_member(
+                    archive, name, context.limits, max_bytes=context.limits.max_text_part_bytes
+                ).decode("utf-8", errors="ignore")
+            except ResourceLimitError:
+                raise
             except Exception:
                 continue
             lowered = self._normalize_text(text)
@@ -184,7 +191,11 @@ class OOXMLAnalyzer(BaseAnalyzer):
             if not lowered_name.endswith((".xml", ".rels")):
                 continue
             try:
-                text = archive.read(name).decode("utf-8", errors="ignore")
+                text = read_zip_member(
+                    archive, name, context.limits, max_bytes=context.limits.max_text_part_bytes
+                ).decode("utf-8", errors="ignore")
+            except ResourceLimitError:
+                raise
             except Exception:
                 continue
             lowered = self._normalize_text(text)

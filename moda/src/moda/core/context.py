@@ -154,7 +154,6 @@ class AnalysisContext:
         parts.extend(str(value) for value in self.metadata.values() if value is not None)
         parts.extend(self.macro_code)
         parts.extend(self.embedded_strings)
-        parts.extend(self.raw_strings)
         for finding in self.findings:
             parts.append(finding.title)
             parts.append(finding.description)
@@ -166,8 +165,7 @@ class AnalysisContext:
                 max_strings=self.limits.max_extracted_strings,
                 max_string_length=self.limits.max_string_length,
             )
-        if not parts or parts[-len(self.raw_strings):] != self.raw_strings:
-            parts.extend(self.raw_strings)
+        parts.extend(self.raw_strings)
         return "\n".join(parts)
 
     # ------------------------------------------------------------------

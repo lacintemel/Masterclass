@@ -10,6 +10,7 @@ from ..core.base import BaseAnalyzer
 from ..core.context import AnalysisContext
 from ..core.enums import FindingSeverity
 from ..utils.regex_patterns import URL_PATTERN
+from ..utils.archive_utils import read_zip_member, validate_zip_archive
 
 class RelationshipAnalyzer(BaseAnalyzer):
     @property
@@ -20,7 +21,7 @@ class RelationshipAnalyzer(BaseAnalyzer):
     def analyze(self, context: AnalysisContext) -> None:
         remote_relationships: list[dict[str, str]] = []
         if context.file_type.is_ooxml:
-            remote_relationships.extend(self._extract_ooxml_relationships(context.file_bytes))
+            remote_relationships.extend(self._extract_ooxml_relationships(context))
 
         if not context.file_type.is_ooxml:
             remote_relationships.extend(
@@ -79,14 +80,25 @@ class RelationshipAnalyzer(BaseAnalyzer):
                 details={"targets": targets[:25], "target_count": len(targets)},
             )
 
-    def _extract_ooxml_relationships(self, data: bytes) -> list[dict[str, str]]:
+    def _extract_ooxml_relationships(self, context: AnalysisContext) -> list[dict[str, str]]:
         relationships: list[dict[str, str]] = []
         try:
-            with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            with zipfile.ZipFile(io.BytesIO(context.file_bytes)) as archive:
+                validate_zip_archive(archive, context.limits)
                 for name in archive.namelist():
                     if not name.lower().endswith(".rels"):
                         continue
-                    relationships.extend(self._parse_rels(name, archive.read(name)))
+                    relationships.extend(
+                        self._parse_rels(
+                            name,
+                            read_zip_member(
+                                archive,
+                                name,
+                                context.limits,
+                                max_bytes=context.limits.max_text_part_bytes,
+                            ),
+                        )
+                    )
         except zipfile.BadZipFile:
             return []
         return relationships

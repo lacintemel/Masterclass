@@ -12,6 +12,8 @@ except ImportError:  # pragma: no cover - depends on optional system package
 from ..core.base import BaseAnalyzer
 from ..core.context import AnalysisContext
 from ..core.enums import FileType, FindingSeverity
+from ..core.limits import AnalysisLimits
+from ..utils.archive_utils import read_zip_member, validate_zip_archive
 from ..utils.file_utils import get_file_extension
 
 class FileTypeDetector(BaseAnalyzer):
@@ -54,9 +56,9 @@ class FileTypeDetector(BaseAnalyzer):
         # 3. Determine exact file type
         file_type = FileType.UNKNOWN
         if base_type == 'OLE':
-            file_type = self._detect_ole_subtype(context.file_path)
+            file_type = self._detect_ole_subtype(context.file_path, data)
         elif base_type == 'ZIP':
-            file_type = self._detect_ooxml_subtype(context.file_path, data)
+            file_type = self._detect_ooxml_subtype(context.file_path, data, context.limits)
         elif base_type == 'PDF':
             file_type = FileType.PDF
         elif base_type == 'RTF':
@@ -91,9 +93,21 @@ class FileTypeDetector(BaseAnalyzer):
                 return ftype
         return None
 
-    def _detect_ole_subtype(self, file_path: Path) -> FileType:
-        # Simplistic detection based on extension since OLE streams are complex to map perfectly without full parsing
-        # Real implementation would look at streams (e.g. WordDocument stream -> DOC)
+    def _detect_ole_subtype(self, file_path: Path, data: bytes) -> FileType:
+        try:
+            import olefile
+
+            if olefile.isOleFile(data):
+                with olefile.OleFileIO(data) as ole:
+                    streams = {"/".join(item).lower() for item in ole.listdir()}
+                if any(name.endswith("worddocument") for name in streams):
+                    return FileType.OLE_DOC
+                if any(name.endswith(("workbook", "book")) for name in streams):
+                    return FileType.OLE_XLS
+                if any(name.endswith("powerpoint document") for name in streams):
+                    return FileType.OLE_PPT
+        except (ImportError, OSError):
+            pass
         ext = get_file_extension(file_path)
         if ext in ('xls', 'xla', 'xlt', 'xlsb'):
             return FileType.OLE_XLS
@@ -101,9 +115,14 @@ class FileTypeDetector(BaseAnalyzer):
             return FileType.OLE_PPT
         return FileType.OLE_DOC # Default OLE
 
-    def _detect_ooxml_subtype(self, file_path: Path, data: bytes) -> FileType:
+    def _detect_ooxml_subtype(
+        self,
+        file_path: Path,
+        data: bytes,
+        limits: AnalysisLimits,
+    ) -> FileType:
         # OOXML type is usually defined in [Content_Types].xml or by extension
-        package = self._inspect_ooxml_package(data)
+        package = self._inspect_ooxml_package(data, limits)
         if not package["is_ooxml"]:
             return FileType.UNKNOWN
         ext = get_file_extension(file_path)
@@ -136,15 +155,25 @@ class FileTypeDetector(BaseAnalyzer):
             return FileType.OOXML_PPTX
         return FileType.OOXML_DOCX # Default OOXML
 
-    def _is_ooxml_package(self, data: bytes) -> bool:
-        return bool(self._inspect_ooxml_package(data)["is_ooxml"])
+    def _is_ooxml_package(self, data: bytes, limits: AnalysisLimits | None = None) -> bool:
+        return bool(self._inspect_ooxml_package(data, limits or AnalysisLimits())["is_ooxml"])
 
-    def _inspect_ooxml_package(self, data: bytes) -> dict[str, object]:
+    def _inspect_ooxml_package(
+        self,
+        data: bytes,
+        limits: AnalysisLimits,
+    ) -> dict[str, object]:
         try:
             with zipfile.ZipFile(io.BytesIO(data)) as archive:
+                validate_zip_archive(archive, limits)
                 names = {name.lower() for name in archive.namelist()}
                 content_types = (
-                    archive.read("[Content_Types].xml").decode("utf-8", errors="ignore")
+                    read_zip_member(
+                        archive,
+                        archive.getinfo("[Content_Types].xml"),
+                        limits,
+                        max_bytes=limits.max_text_part_bytes,
+                    ).decode("utf-8", errors="ignore")
                     if "[content_types].xml" in names
                     else ""
                 )

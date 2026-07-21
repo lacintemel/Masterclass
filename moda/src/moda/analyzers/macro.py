@@ -8,6 +8,7 @@ from ..core.base import BaseAnalyzer
 from ..core.context import AnalysisContext
 from ..core.enums import FileType, FindingSeverity
 from ..utils.file_utils import extract_strings
+from ..utils.archive_utils import read_zip_member, validate_zip_archive
 
 try:
     import olefile
@@ -56,14 +57,19 @@ class MacroAnalyzer(BaseAnalyzer):
         chunks: list[str] = []
         chunks.extend(self._extract_vba_with_oletools(context))
         if context.file_type.is_ooxml and not chunks:
-            chunks.extend(self._extract_ooxml_vba_strings(context.file_bytes))
+            chunks.extend(self._extract_ooxml_vba_strings(context))
         elif context.file_type.is_ole and not chunks:
             chunks.extend(self._extract_ole_vba_strings(context.file_bytes))
 
         if context.file_type.is_macro_enabled and not chunks:
             chunks.extend(
                 text
-                for text in extract_strings(context.file_bytes, min_length=5)
+                for text in extract_strings(
+                    context.file_bytes,
+                    min_length=5,
+                    max_strings=context.limits.max_extracted_strings,
+                    max_string_length=context.limits.max_string_length,
+                )
                 if self._looks_like_macro_text(text)
             )
         return list(dict.fromkeys(chunks))
@@ -83,7 +89,9 @@ class MacroAnalyzer(BaseAnalyzer):
                     continue
                 modules.append(f"' {stream_path or vba_filename}\n{vba_code}")
             return modules
-        except Exception:
+        except Exception as exc:
+            context.errors.append(f"VBA parser could not inspect the document: {exc}")
+            context.extra.setdefault("capability_overrides", {})[self.name] = "partial"
             return []
         finally:
             if parser is not None:
@@ -92,13 +100,21 @@ class MacroAnalyzer(BaseAnalyzer):
                 except Exception:
                     pass
 
-    def _extract_ooxml_vba_strings(self, data: bytes) -> list[str]:
+    def _extract_ooxml_vba_strings(self, context: AnalysisContext) -> list[str]:
         strings: list[str] = []
         try:
-            with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            with zipfile.ZipFile(io.BytesIO(context.file_bytes)) as archive:
+                validate_zip_archive(archive, context.limits)
                 for name in archive.namelist():
                     if name.lower().endswith("vbaproject.bin"):
-                        strings.extend(extract_strings(archive.read(name), min_length=4))
+                        strings.extend(
+                            extract_strings(
+                                read_zip_member(archive, name, context.limits),
+                                min_length=4,
+                                max_strings=context.limits.max_extracted_strings,
+                                max_string_length=context.limits.max_string_length,
+                            )
+                        )
         except zipfile.BadZipFile:
             return []
         return strings
@@ -113,8 +129,22 @@ class MacroAnalyzer(BaseAnalyzer):
                     stream_name = "/".join(stream).lower()
                     if "vba" in stream_name or stream_name.endswith(("/dir", "/project")):
                         try:
-                            data = ole.openstream(stream).read()
-                            strings.extend(extract_strings(data, min_length=4))
+                            size = ole.get_size(stream)
+                            if size > context.limits.max_archive_entry_bytes:
+                                context.errors.append(
+                                    f"VBA stream skipped because it exceeds {context.limits.max_archive_entry_bytes} bytes"
+                                )
+                                context.extra.setdefault("capability_overrides", {})[self.name] = "partial"
+                                continue
+                            data = ole.openstream(stream).read(context.limits.max_archive_entry_bytes + 1)
+                            strings.extend(
+                                extract_strings(
+                                    data,
+                                    min_length=4,
+                                    max_strings=context.limits.max_extracted_strings,
+                                    max_string_length=context.limits.max_string_length,
+                                )
+                            )
                         except Exception:
                             continue
         except Exception:

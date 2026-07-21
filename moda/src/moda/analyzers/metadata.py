@@ -16,6 +16,8 @@ except ImportError:  # pragma: no cover - optional analyzer dependency
 from ..core.base import BaseAnalyzer
 from ..core.context import AnalysisContext
 from ..core.enums import FileType, FindingSeverity
+from ..core.exceptions import ResourceLimitError
+from ..utils.archive_utils import read_zip_member, validate_zip_archive
 
 class MetadataAnalyzer(BaseAnalyzer):
     """Extracts and analyzes document metadata for suspicious patterns."""
@@ -57,6 +59,8 @@ class MetadataAnalyzer(BaseAnalyzer):
                     metadata['CreateTime'] = str(meta.create_time) if meta.create_time else None
                     metadata['LastSavedTime'] = str(meta.last_saved_time) if meta.last_saved_time else None
                     metadata['CreatingApplication'] = meta.creating_application.decode('utf-8', errors='ignore') if meta.creating_application else None
+        except ResourceLimitError:
+            raise
         except Exception as e:
             self.logger.debug(f"Error parsing OLE metadata: {e}")
         return metadata
@@ -67,8 +71,14 @@ class MetadataAnalyzer(BaseAnalyzer):
             # Note: We simulate reading zip from memory
             import io
             with zipfile.ZipFile(io.BytesIO(context.file_bytes)) as z:
+                validate_zip_archive(z, context.limits)
                 if 'docProps/core.xml' in z.namelist():
-                    core_xml = z.read('docProps/core.xml')
+                    core_xml = read_zip_member(
+                        z,
+                        'docProps/core.xml',
+                        context.limits,
+                        max_bytes=context.limits.max_text_part_bytes,
+                    )
                     root = ET.fromstring(core_xml)
                     namespaces = {'dc': 'http://purl.org/dc/elements/1.1/', 'cp': 'http://schemas.openxmlformats.org/package/2006/metadata/core-properties', 'dcterms': 'http://purl.org/dc/terms/'}
                     
@@ -79,6 +89,8 @@ class MetadataAnalyzer(BaseAnalyzer):
                     metadata['Author'] = creator.text if creator is not None else None
                     metadata['LastSavedBy'] = last_mod_by.text if last_mod_by is not None else None
                     metadata['CreateTime'] = created.text if created is not None else None
+        except ResourceLimitError:
+            raise
         except Exception as e:
             self.logger.debug(f"Error parsing OOXML metadata: {e}")
         return metadata

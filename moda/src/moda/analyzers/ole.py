@@ -70,6 +70,7 @@ class OLEAnalyzer(BaseAnalyzer):
     def analyze(self, context: AnalysisContext) -> None:
         if olefile is None:
             context.errors.append("OLE parsing skipped: olefile is not installed")
+            context.extra.setdefault("capability_overrides", {})[self.name] = "unavailable"
             return
         if not olefile.isOleFile(context.file_bytes):
             return
@@ -83,6 +84,7 @@ class OLEAnalyzer(BaseAnalyzer):
                 self._record_directory_tree(context, ole)
         except Exception as e:
             context.errors.append(f"OLE parsing error: {e}")
+            context.extra.setdefault("capability_overrides", {})[self.name] = "failed"
 
     def _inspect_streams(self, context: AnalysisContext, ole: Any) -> None:
         streams = ole.listdir(streams=True, storages=False)
@@ -117,6 +119,7 @@ class OLEAnalyzer(BaseAnalyzer):
                     FindingSeverity.MEDIUM,
                     {"stream": stream_name},
                 )
+                context.extra.setdefault("capability_overrides", {})[self.name] = "partial"
             if "objectpool" in lowered:
                 self._add_finding(
                     context,
@@ -198,11 +201,16 @@ class OLEAnalyzer(BaseAnalyzer):
         stream_name: str,
     ) -> None:
         try:
-            data = ole.openstream(stream).read()
+            data = self._read_ole_stream(context, ole, stream)
         except Exception:
             return
 
-        strings = extract_strings(data, min_length=4)
+        strings = extract_strings(
+            data,
+            min_length=4,
+            max_strings=context.limits.max_extracted_strings,
+            max_string_length=context.limits.max_string_length,
+        )
         context.macro_code.extend(strings)
         entropy = calculate_entropy(data)
         if entropy >= 7.2 and len(data) > 1024:
@@ -257,14 +265,22 @@ class OLEAnalyzer(BaseAnalyzer):
         for stream in candidates:
             stream_name = "/".join(stream)
             try:
-                data = ole.openstream(stream).read()
+                data = self._read_ole_stream(context, ole, stream)
             except Exception:
                 continue
-            strings = extract_strings(data, min_length=5)
+            strings = extract_strings(
+                data,
+                min_length=5,
+                max_strings=context.limits.max_extracted_strings,
+                max_string_length=context.limits.max_string_length,
+            )
             if not strings:
                 continue
             stream_names.append(stream_name)
             stream_strings.extend(strings)
+            if len(stream_strings) >= context.limits.max_extracted_strings:
+                stream_strings = stream_strings[: context.limits.max_extracted_strings]
+                break
 
         if not stream_strings:
             return
@@ -325,6 +341,23 @@ class OLEAnalyzer(BaseAnalyzer):
                 FindingSeverity.HIGH,
                 {"markers": ole_hits, "streams": stream_names[:10]},
             )
+
+    def _read_ole_stream(
+        self,
+        context: AnalysisContext,
+        ole: Any,
+        stream: list[str],
+    ) -> bytes:
+        size = int(ole.get_size(stream))
+        if size > context.limits.max_archive_entry_bytes:
+            raise ValueError(
+                f"OLE stream exceeds {context.limits.max_archive_entry_bytes} byte safety limit"
+            )
+        handle = ole.openstream(stream)
+        try:
+            return handle.read(context.limits.max_archive_entry_bytes + 1)
+        except TypeError:  # simple file-like test doubles
+            return handle.read()
 
     def _powerpoint_stream_candidates(self, ole: Any) -> list[list[str]]:
         candidates: list[list[str]] = []

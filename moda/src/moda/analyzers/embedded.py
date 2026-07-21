@@ -12,6 +12,7 @@ from ..core.base import BaseAnalyzer
 from ..core.context import AnalysisContext
 from ..core.enums import FindingSeverity
 from ..utils.file_utils import calculate_entropy, extract_strings, is_pe_file
+from ..utils.archive_utils import read_zip_member, validate_zip_archive
 
 class EmbeddedObjectAnalyzer(BaseAnalyzer):
     @property
@@ -24,7 +25,7 @@ class EmbeddedObjectAnalyzer(BaseAnalyzer):
     def analyze(self, context: AnalysisContext) -> None:
         embedded = self._collect_ooxml_embedded(context)
         if not context.file_type.is_ooxml:
-            embedded.extend(self._collect_raw_nested_payloads(context.file_bytes))
+            embedded.extend(self._collect_raw_nested_payloads(context))
         if not embedded:
             return
 
@@ -46,11 +47,12 @@ class EmbeddedObjectAnalyzer(BaseAnalyzer):
         embedded: list[dict[str, object]] = []
         try:
             with zipfile.ZipFile(io.BytesIO(context.file_bytes)) as archive:
+                validate_zip_archive(archive, context.limits)
                 for name in archive.namelist():
                     lowered = name.lower()
                     if not self._is_interesting_ooxml_part(lowered):
                         continue
-                    data = archive.read(name)
+                    data = read_zip_member(archive, name, context.limits)
                     item_type = self._classify(name, data)
                     embedded.append(
                         {
@@ -60,12 +62,28 @@ class EmbeddedObjectAnalyzer(BaseAnalyzer):
                             "entropy": round(calculate_entropy(data), 3),
                         }
                     )
-                    context.embedded_strings.extend(extract_strings(data, min_length=5)[:50])
+                    context.embedded_strings.extend(
+                        extract_strings(
+                            data,
+                            min_length=5,
+                            max_strings=50,
+                            max_string_length=context.limits.max_string_length,
+                        )
+                    )
         except zipfile.BadZipFile:
             return []
         return embedded
 
-    def _collect_raw_nested_payloads(self, data: bytes) -> list[dict[str, object]]:
+    def _collect_raw_nested_payloads(
+        self,
+        context: AnalysisContext | bytes,
+    ) -> list[dict[str, object]]:
+        data = context.file_bytes if isinstance(context, AnalysisContext) else context
+        max_nested_payloads = (
+            context.limits.max_nested_payloads
+            if isinstance(context, AnalysisContext)
+            else 100
+        )
         embedded: list[dict[str, object]] = []
         signatures = [
             (b"MZ", "PE Executable"),
@@ -79,8 +97,7 @@ class EmbeddedObjectAnalyzer(BaseAnalyzer):
                 offset = data.find(signature, start)
                 if offset == -1:
                     break
-                payload = data[offset:]
-                if not self._is_valid_raw_payload(signature, payload):
+                if not self._is_valid_raw_payload(signature, data, offset):
                     start = offset + 1
                     continue
                 embedded.append(
@@ -91,18 +108,20 @@ class EmbeddedObjectAnalyzer(BaseAnalyzer):
                         "size": len(data) - offset,
                     }
                 )
+                if len(embedded) >= max_nested_payloads:
+                    return embedded
                 start = offset + len(signature)
         return embedded
 
-    def _is_valid_raw_payload(self, signature: bytes, payload: bytes) -> bool:
+    def _is_valid_raw_payload(self, signature: bytes, data: bytes, offset: int) -> bool:
         if signature == b"MZ":
-            return is_pe_file(payload)
+            return is_pe_file(memoryview(data)[offset:])
         if signature == b"PK\x03\x04":
-            return zipfile.is_zipfile(io.BytesIO(payload))
+            return data.find(b"PK\x05\x06", offset) >= 0
         if signature == b"\xD0\xCF\x11\xE0":
-            return olefile.isOleFile(payload) if olefile is not None else len(payload) > 512
+            return len(data) - offset > 512
         if signature == b"%PDF":
-            return b"%%EOF" in payload[:20 * 1024 * 1024]
+            return data.find(b"%%EOF", offset, min(len(data), offset + 20 * 1024 * 1024)) >= 0
         return True
 
     def _is_interesting_ooxml_part(self, name: str) -> bool:

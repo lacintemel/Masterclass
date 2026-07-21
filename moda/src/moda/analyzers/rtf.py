@@ -25,7 +25,14 @@ class RTFAnalyzer(BaseAnalyzer):
     def analyze(self, context: AnalysisContext) -> None:
         text = context.file_bytes.decode("latin-1", errors="ignore")
         lowered = text.lower()
-        context.raw_strings.extend(extract_strings(context.file_bytes, min_length=5))
+        context.raw_strings.extend(
+            extract_strings(
+                context.file_bytes,
+                min_length=5,
+                max_strings=context.limits.max_extracted_strings,
+                max_string_length=context.limits.max_string_length,
+            )
+        )
 
         object_count = lowered.count(r"\object")
         objdata_count = lowered.count(r"\objdata")
@@ -56,13 +63,18 @@ class RTFAnalyzer(BaseAnalyzer):
                 severity=FindingSeverity.HIGH,
             )
 
-        hex_runs = re.findall(r"(?:[0-9a-fA-F]{2}\s*){256,}", text)
-        if hex_runs:
-            longest = max(len(run) for run in hex_runs)
+        hex_blob_count = 0
+        longest = 0
+        for match in re.finditer(r"(?:[0-9a-fA-F]{2}\s*){256,}", text):
+            hex_blob_count += 1
+            longest = max(longest, len(match.group()))
+            if hex_blob_count >= 1_000:
+                break
+        if hex_blob_count:
             self._add_finding(
                 context,
                 title="Large RTF Hex Blob",
                 description="RTF contains large hex-encoded data blocks.",
                 severity=FindingSeverity.MEDIUM,
-                details={"hex_blob_count": len(hex_runs), "largest_chars": longest},
+                details={"hex_blob_count": hex_blob_count, "largest_chars": longest},
             )

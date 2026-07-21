@@ -4,10 +4,9 @@ import hashlib
 
 from ..core.base import BaseAnalyzer
 from ..core.context import AnalysisContext
-from ..core.enums import IOCType
 
 class HashGenerator(BaseAnalyzer):
-    """Computes file hashes and registers them as IOCs."""
+    """Computes identity hashes for the analysed artifact."""
     
     @property
     def name(self) -> str:
@@ -30,6 +29,3 @@ class HashGenerator(BaseAnalyzer):
             "SHA256": sha256_hash
         }
         
-        self._add_ioc(context, IOCType.MD5, md5_hash, self.name)
-        self._add_ioc(context, IOCType.SHA1, sha1_hash, self.name)
-        self._add_ioc(context, IOCType.SHA256, sha256_hash, self.name)
