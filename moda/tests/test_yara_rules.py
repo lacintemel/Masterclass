@@ -87,7 +87,7 @@ class YaraRuleTests(unittest.TestCase):
         rules_dir = Path(__file__).resolve().parents[1] / "rules" / "official"
         compiled = yara.compile(str(rules_dir / "maldoc_macros.yar"))
         sample = (
-            b'import telebot\n'
+            b"import telebot\n"
             b'bot = telebot.TeleBot("123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghi")\n'
             b'bot.sendMessage(1234, "ready")\n'
         )
@@ -123,7 +123,10 @@ rule unit_custom_rule_for_tests
         rules = {match.rule_name for match in result.yara_matches}
         self.assertIn("unit_custom_rule_for_tests", rules)
         self.assertTrue(
-            any(finding.title == "YARA Rule Match: unit_custom_rule_for_tests" for finding in result.findings)
+            any(
+                finding.title == "YARA Rule Match: unit_custom_rule_for_tests"
+                for finding in result.findings
+            )
         )
 
     def test_scanner_loads_external_rules_and_skips_bad_files(self) -> None:
@@ -143,7 +146,9 @@ rule unit_external_rule_for_tests
 """.strip(),
             encoding="utf-8",
         )
-        bad_rule.write_text("rule unit_external_bad { strings: $a = \"x\" condition: $missing }", encoding="utf-8")
+        bad_rule.write_text(
+            'rule unit_external_bad { strings: $a = "x" condition: $missing }', encoding="utf-8"
+        )
         self.addCleanup(good_rule.unlink, missing_ok=True)
         self.addCleanup(bad_rule.unlink, missing_ok=True)
 
@@ -157,7 +162,10 @@ rule unit_external_rule_for_tests
         self.assertIn("unit_external_rule_for_tests", rules)
         self.assertIn("yara_compile_errors", result.extra)
         self.assertTrue(
-            any(finding.title == "YARA Rule Match: unit_external_rule_for_tests" for finding in result.findings)
+            any(
+                finding.title == "YARA Rule Match: unit_external_rule_for_tests"
+                for finding in result.findings
+            )
         )
 
 

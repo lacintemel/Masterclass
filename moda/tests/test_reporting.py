@@ -13,9 +13,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from moda.cli import build_reporter, emit_report
-from moda.core.enums import FindingSeverity, IOCType
 from moda.core.engine import AnalyzerEngine
-from moda.core.models import Finding, IOC, YaraMatch
+from moda.core.enums import FindingSeverity, IOCType
+from moda.core.models import IOC, Finding, YaraMatch
 from moda.reporting.pdf_report import PDFReporter
 
 
@@ -89,7 +89,7 @@ class ReportingTests(unittest.TestCase):
                     meta={"description": "Test malicious document rule", "severity": "high"},
                 ),
             ),
-            macro_code=("Sub AutoOpen()\n  Shell \"powershell.exe\"\nEnd Sub",),
+            macro_code=('Sub AutoOpen()\n  Shell "powershell.exe"\nEnd Sub',),
             risk_level="high",
             risk_score=65,
             score_breakdown={

