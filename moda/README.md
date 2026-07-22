@@ -238,6 +238,47 @@ Non-loopback binding is rejected by default. To deliberately expose the UI,
 use `--allow-remote` and provide `--token` or `MODA_UI_TOKEN`. Remote deployments
 should still be placed behind TLS and a trusted reverse proxy.
 
+### Report chatbot
+
+The web UI includes an optional evidence-grounded assistant. It sends a bounded,
+structured version of the cached analysis result—not the uploaded document—to the
+configured provider. The context includes risk components, complete finding records
+and evidence, IOC context and confidence, YARA metadata, bounded macro excerpts,
+analysis errors, metadata, and response recommendations. Report values are marked as
+untrusted so document text cannot become model instructions.
+
+For OpenAI:
+
+```bash
+export LLM_PROVIDER=openai
+export OPENAI_API_KEY="your-key"
+export OPENAI_MODEL=gpt-5.6-terra
+PYTHONPATH=src python3.12 -m moda ui --no-yara
+```
+
+For Gemini:
+
+```bash
+export LLM_PROVIDER=gemini
+export GEMINI_API_KEY="your-key"
+export GEMINI_MODEL=gemini-3.6-flash
+PYTHONPATH=src python3.12 -m moda ui --no-yara
+```
+
+Alternatively, copy `.env.example` to `.env`, fill in one key, and load it into
+the shell before starting the UI:
+
+```bash
+set -a
+source .env
+set +a
+```
+
+Keep `.env` out of version control. API keys are read only by the Python backend
+and are never returned to browser JavaScript. `LLM_MAX_CONTEXT_CHARS` bounds the
+report payload; when a very large report is shortened, the context records the
+number of omitted entries. Chat history is limited to the last eight messages.
+
 ## YARA
 
 MODA recursively loads YARA files from:
@@ -392,11 +433,18 @@ SMTP traffic.
 | `ACCEPTED_RECIPIENT_DOMAINS` | `example.test` | comma-separated exact recipient domains |
 | `QUARANTINE_PATH` | `quarantine` | protected `.eml`/`.json` storage |
 | `SKIP_YARA` | `false` | disable YARA only when explicitly required |
+| `LLM_PROVIDER` | `openai` | optional report chatbot provider (`openai` or `gemini`) |
+| `OPENAI_MODEL` | `gpt-5.6-terra` | OpenAI chatbot model |
+| `GEMINI_MODEL` | `gemini-3.6-flash` | Gemini chatbot model |
+| `LLM_TIMEOUT_SECONDS` | `30` | hosted model request timeout |
+| `LLM_MAX_CONTEXT_CHARS` | `60000` | maximum structured report context size |
+| `LLM_MAX_OUTPUT_TOKENS` | `1600` | maximum chatbot response tokens |
 
 `.env.example` also documents `ANALYZER_URL` as a reserved compatibility value.
 The current repository already exposes a safe Python API, so the gateway invokes
 `AnalyzerEngine` directly and does not add an unnecessary HTTP analyzer service.
-No credentials or secrets are required or committed.
+The gateway itself requires no credentials. The optional report chatbot requires
+one provider API key, which belongs in the ignored `.env` file and is never committed.
 
 ### Real analyzer mode and failure policy
 
