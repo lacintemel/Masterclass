@@ -1,16 +1,19 @@
 from __future__ import annotations
 
+import io
 import json
 import sys
 import unittest
 from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
+from urllib.error import HTTPError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from moda.chatbot import (
     ChatbotConfig,
+    ChatbotProviderError,
     ChatMessage,
     ReportChatbot,
     build_analysis_context,
@@ -222,6 +225,77 @@ class ChatbotProviderTests(unittest.TestCase):
         self.assertEqual(config.provider, "gemini")
         self.assertEqual(config.model, "gemini-custom")
         self.assertEqual(config.key_variable, "GEMINI_API_KEY")
+
+    def test_transient_provider_error_is_retried(self) -> None:
+        config = ChatbotConfig(
+            provider="gemini",
+            api_key="gemini-key",
+            model="gemini-test",
+            max_retries=1,
+        )
+        chatbot = ReportChatbot(config)
+        transient = HTTPError(
+            "https://example.invalid",
+            503,
+            "Unavailable",
+            {},
+            io.BytesIO(
+                json.dumps(
+                    {"error": {"status": "UNAVAILABLE", "message": "Try again later"}}
+                ).encode()
+            ),
+        )
+        success = {
+            "steps": [
+                {
+                    "type": "model_output",
+                    "content": [{"type": "text", "text": "Recovered answer"}],
+                }
+            ]
+        }
+
+        with (
+            patch(
+                "moda.chatbot.urlopen",
+                side_effect=[transient, FakeHTTPResponse(success)],
+            ) as mocked,
+            patch("moda.chatbot.time.sleep") as sleep,
+        ):
+            answer = chatbot.ask(make_result(), "Why?", language="en")
+
+        self.assertEqual(answer.answer, "Recovered answer")
+        self.assertEqual(mocked.call_count, 2)
+        sleep.assert_called_once()
+
+    def test_permanent_provider_error_is_not_retried_and_keeps_detail(self) -> None:
+        config = ChatbotConfig(
+            provider="gemini",
+            api_key="gemini-key",
+            model="gemini-test",
+            max_retries=3,
+        )
+        chatbot = ReportChatbot(config)
+        permanent = HTTPError(
+            "https://example.invalid",
+            403,
+            "Forbidden",
+            {},
+            io.BytesIO(
+                json.dumps(
+                    {"error": {"status": "PERMISSION_DENIED", "message": "Invalid key"}}
+                ).encode()
+            ),
+        )
+
+        with (
+            patch("moda.chatbot.urlopen", side_effect=permanent) as mocked,
+            patch("moda.chatbot.time.sleep") as sleep,
+            self.assertRaisesRegex(ChatbotProviderError, "PERMISSION_DENIED"),
+        ):
+            chatbot.ask(make_result(), "Why?", language="en")
+
+        self.assertEqual(mocked.call_count, 1)
+        sleep.assert_not_called()
 
 
 if __name__ == "__main__":

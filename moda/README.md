@@ -261,7 +261,7 @@ For Gemini:
 ```bash
 export LLM_PROVIDER=gemini
 export GEMINI_API_KEY="your-key"
-export GEMINI_MODEL=gemini-3.6-flash
+export GEMINI_MODEL=gemini-3.5-flash-lite
 PYTHONPATH=src python3.12 -m moda ui --no-yara
 ```
 
@@ -435,10 +435,11 @@ SMTP traffic.
 | `SKIP_YARA` | `false` | disable YARA only when explicitly required |
 | `LLM_PROVIDER` | `openai` | optional report chatbot provider (`openai` or `gemini`) |
 | `OPENAI_MODEL` | `gpt-5.6-terra` | OpenAI chatbot model |
-| `GEMINI_MODEL` | `gemini-3.6-flash` | Gemini chatbot model |
-| `LLM_TIMEOUT_SECONDS` | `30` | hosted model request timeout |
+| `GEMINI_MODEL` | `gemini-3.5-flash-lite` | Gemini chatbot model |
+| `LLM_TIMEOUT_SECONDS` | `90` | hosted model request timeout |
 | `LLM_MAX_CONTEXT_CHARS` | `60000` | maximum structured report context size |
 | `LLM_MAX_OUTPUT_TOKENS` | `1600` | maximum chatbot response tokens |
+| `LLM_MAX_RETRIES` | `3` | retries for transient 408/429/5xx and network errors |
 
 `.env.example` also documents `ANALYZER_URL` as a reserved compatibility value.
 The current repository already exposes a safe Python API, so the gateway invokes

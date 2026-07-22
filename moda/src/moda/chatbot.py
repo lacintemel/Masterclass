@@ -5,6 +5,8 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import random
+import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -52,9 +54,10 @@ class ChatbotConfig:
     provider: str
     api_key: str
     model: str
-    timeout_seconds: float = 30.0
+    timeout_seconds: float = 90.0
     max_context_chars: int = 60_000
     max_output_tokens: int = 1_600
+    max_retries: int = 3
 
     @property
     def configured(self) -> bool:
@@ -76,7 +79,7 @@ class ChatbotConfig:
             model = values.get("OPENAI_MODEL", "gpt-5.6-terra").strip()
         else:
             api_key = values.get("GEMINI_API_KEY", "").strip()
-            model = values.get("GEMINI_MODEL", "gemini-3.6-flash").strip()
+            model = values.get("GEMINI_MODEL", "gemini-3.5-flash-lite").strip()
 
         if not model:
             raise ChatbotConfigurationError("The selected provider model cannot be empty")
@@ -85,13 +88,14 @@ class ChatbotConfig:
             provider=provider,
             api_key=api_key,
             model=model,
-            timeout_seconds=_bounded_float(values.get("LLM_TIMEOUT_SECONDS"), 30.0, 1.0, 120.0),
+            timeout_seconds=_bounded_float(values.get("LLM_TIMEOUT_SECONDS"), 90.0, 1.0, 120.0),
             max_context_chars=_bounded_int(
                 values.get("LLM_MAX_CONTEXT_CHARS"), 60_000, 8_000, 200_000
             ),
             max_output_tokens=_bounded_int(
                 values.get("LLM_MAX_OUTPUT_TOKENS"), 1_600, 256, 8_000
             ),
+            max_retries=_bounded_int(values.get("LLM_MAX_RETRIES"), 3, 0, 5),
         )
 
 
@@ -163,6 +167,7 @@ class ReportChatbot:
             headers={"Authorization": f"Bearer {self.config.api_key}"},
             timeout=self.config.timeout_seconds,
             provider="OpenAI",
+            max_retries=self.config.max_retries,
         )
         direct = response.get("output_text")
         if isinstance(direct, str) and direct.strip():
@@ -186,7 +191,6 @@ class ReportChatbot:
             "input": prompt,
             "generation_config": {
                 "thinking_level": "low",
-                "temperature": 0.2,
                 "max_output_tokens": self.config.max_output_tokens,
             },
             "store": False,
@@ -197,6 +201,7 @@ class ReportChatbot:
             headers={"x-goog-api-key": self.config.api_key},
             timeout=self.config.timeout_seconds,
             provider="Gemini",
+            max_retries=self.config.max_retries,
         )
         direct = response.get("output_text")
         if isinstance(direct, str) and direct.strip():
@@ -494,6 +499,7 @@ def _post_json(
     headers: Mapping[str, str],
     timeout: float,
     provider: str,
+    max_retries: int,
 ) -> dict[str, Any]:
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     request = Request(  # noqa: S310 - caller selects one of two fixed HTTPS provider URLs
@@ -502,13 +508,28 @@ def _post_json(
         method="POST",
         headers={"Content-Type": "application/json", "User-Agent": "MODA/0.1", **headers},
     )
-    try:
-        with urlopen(request, timeout=timeout) as response:  # noqa: S310 - fixed HTTPS URL
-            raw = response.read()
-    except HTTPError as exc:
-        raise ChatbotProviderError(f"{provider} API request failed with HTTP {exc.code}") from exc
-    except (URLError, TimeoutError, OSError) as exc:
-        raise ChatbotProviderError(f"{provider} API could not be reached") from exc
+    transient_statuses = {408, 429, 500, 502, 503, 504}
+    raw = b""
+    for attempt in range(max_retries + 1):
+        try:
+            with urlopen(request, timeout=timeout) as response:  # noqa: S310 - fixed HTTPS URL
+                raw = response.read()
+            break
+        except HTTPError as exc:
+            error_body = exc.read()
+            detail = _provider_error_detail(error_body)
+            if exc.code not in transient_statuses or attempt >= max_retries:
+                suffix = f" ({detail})" if detail else ""
+                raise ChatbotProviderError(
+                    f"{provider} API request failed with HTTP {exc.code}{suffix}"
+                ) from exc
+            _retry_delay(attempt, exc.headers.get("Retry-After") if exc.headers else None)
+        except (URLError, TimeoutError, OSError) as exc:
+            if attempt >= max_retries:
+                raise ChatbotProviderError(
+                    f"{provider} API could not be reached after {max_retries + 1} attempts"
+                ) from exc
+            _retry_delay(attempt)
 
     try:
         parsed = json.loads(raw.decode("utf-8"))
@@ -517,6 +538,32 @@ def _post_json(
     if not isinstance(parsed, dict):
         raise ChatbotProviderError(f"{provider} API returned an unexpected response")
     return parsed
+
+
+def _provider_error_detail(raw: bytes) -> str:
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return ""
+    error = payload.get("error", {}) if isinstance(payload, dict) else {}
+    if not isinstance(error, dict):
+        return ""
+    status = str(error.get("status", "")).strip()
+    message = " ".join(str(error.get("message", "")).split())[:240]
+    if status and message:
+        return f"{status}: {message}"
+    return status or message
+
+
+def _retry_delay(attempt: int, retry_after: str | None = None) -> None:
+    delay = min(2**attempt, 8.0)
+    if retry_after:
+        try:
+            delay = min(max(float(retry_after), 0.0), 30.0)
+        except ValueError:
+            pass
+    jitter = random.uniform(0.0, 0.25)  # noqa: S311 - non-security retry jitter
+    time.sleep(delay + jitter)
 
 
 def _json_size(value: object) -> int:
