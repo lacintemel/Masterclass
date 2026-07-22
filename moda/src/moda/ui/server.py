@@ -15,6 +15,13 @@ from pathlib import Path
 from typing import Any, cast
 from urllib.parse import parse_qs, unquote, urlparse
 
+from moda.chatbot import (
+    ChatbotConfig,
+    ChatbotConfigurationError,
+    ChatbotProviderError,
+    ReportChatbot,
+    parse_history,
+)
 from moda.core.engine import AnalyzerEngine
 from moda.core.models import AnalysisResult
 from moda.reporting.pdf_report import PDFReporter
@@ -34,6 +41,9 @@ class MODAHTTPServer(ThreadingHTTPServer):
     cache_lock: threading.Lock
     rules_dir: str | None
     scoring_config: str | None
+    chatbot: ReportChatbot | None
+    chatbot_config: ChatbotConfig | None
+    chatbot_config_error: str
 
 
 class MODAUIHandler(SimpleHTTPRequestHandler):
@@ -47,7 +57,17 @@ class MODAUIHandler(SimpleHTTPRequestHandler):
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
         if parsed.path == "/api/health":
-            self._send_json({"status": "ok"})
+            config = getattr(self.server, "chatbot_config", None)
+            self._send_json(
+                {
+                    "status": "ok",
+                    "chatbot": {
+                        "configured": bool(config and config.configured),
+                        "provider": config.provider if config else None,
+                        "model": config.model if config else None,
+                    },
+                }
+            )
             return
         if parsed.path == "/":
             self.path = "/index.html"
@@ -55,12 +75,16 @@ class MODAUIHandler(SimpleHTTPRequestHandler):
 
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
-        if parsed.path not in {"/api/analyze", "/api/report"}:
+        if parsed.path not in {"/api/analyze", "/api/report", "/api/chat"}:
             self.send_error(404, "Not found")
             return
 
         if not self._is_authorized() or not self._is_same_origin():
             self._send_json({"error": "Request is not authorized"}, status=403)
+            return
+
+        if parsed.path == "/api/chat":
+            self._handle_chat()
             return
 
         query = parse_qs(parsed.query)
@@ -174,6 +198,75 @@ class MODAUIHandler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _handle_chat(self) -> None:
+        chatbot = getattr(self.server, "chatbot", None)
+        if chatbot is None:
+            config = getattr(self.server, "chatbot_config", None)
+            key_name = config.key_variable if config else "OPENAI_API_KEY or GEMINI_API_KEY"
+            self._send_json(
+                {"error": f"Chatbot is not configured; set {key_name} on the server"},
+                status=503,
+            )
+            return
+
+        try:
+            length = int(self.headers.get("Content-Length", "0") or "0")
+        except ValueError:
+            self._send_json({"error": "Invalid Content-Length header"}, status=400)
+            return
+        if length <= 0 or length > 32_768:
+            self._send_json({"error": "Chat request must be between 1 and 32768 bytes"}, status=400)
+            return
+
+        try:
+            raw = self.rfile.read(length)
+            if len(raw) != length:
+                raise ValueError("Incomplete request body")
+            payload = json.loads(raw.decode("utf-8"))
+            if not isinstance(payload, dict):
+                raise ValueError("Chat request must be a JSON object")
+
+            analysis_id = payload.get("analysis_id")
+            question = payload.get("question")
+            language = payload.get("language", "tr")
+            if not isinstance(analysis_id, str) or not analysis_id or len(analysis_id) > 128:
+                raise ValueError("A valid analysis_id is required")
+            if not isinstance(question, str) or not 1 <= len(question.strip()) <= 2_000:
+                raise ValueError("Question length must be between 1 and 2000 characters")
+            if language not in {"tr", "en"}:
+                raise ValueError("language must be 'tr' or 'en'")
+            history = parse_history(payload.get("history"))
+        except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+            self._send_json({"error": str(exc)}, status=400)
+            return
+
+        result = self._get_cached_result(analysis_id)
+        if result is None:
+            self._send_json({"error": "Analysis result expired or was not found"}, status=404)
+            return
+
+        try:
+            response = chatbot.ask(result, question.strip(), history=history, language=language)
+        except ChatbotConfigurationError as exc:
+            self._send_json({"error": str(exc)}, status=503)
+            return
+        except ChatbotProviderError as exc:
+            logger.warning("Chat provider request failed: %s", exc)
+            self._send_json({"error": str(exc)}, status=502)
+            return
+        except Exception:
+            logger.exception("Chat request failed")
+            self._send_json({"error": "Chatbot could not answer the question"}, status=500)
+            return
+
+        self._send_json(
+            {
+                "answer": response.answer,
+                "provider": response.provider,
+                "model": response.model,
+            }
+        )
+
     def _is_authorized(self) -> bool:
         token = getattr(self.server, "access_token", "")
         return not token or secrets.compare_digest(self.headers.get("X-MODA-Token", ""), token)
@@ -265,6 +358,17 @@ def run_ui(
     server.cache_lock = threading.Lock()
     server.rules_dir = str(Path(rules_dir).resolve()) if rules_dir else None
     server.scoring_config = str(Path(scoring_config).resolve()) if scoring_config else None
+    try:
+        server.chatbot_config = ChatbotConfig.from_env()
+        server.chatbot = (
+            ReportChatbot(server.chatbot_config) if server.chatbot_config.configured else None
+        )
+        server.chatbot_config_error = ""
+    except ChatbotConfigurationError as exc:
+        server.chatbot_config = None
+        server.chatbot = None
+        server.chatbot_config_error = str(exc)
+        logger.warning("Chatbot configuration is invalid: %s", exc)
 
     url = f"http://{host}:{port}"
     print(f"MODA UI running at {url}")

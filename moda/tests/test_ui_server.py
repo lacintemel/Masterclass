@@ -8,12 +8,29 @@ import unittest
 import urllib.request
 import zipfile
 from collections import OrderedDict
+from dataclasses import dataclass
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from moda.ui.server import MODAUIHandler
+
+
+@dataclass
+class FakeChatAnswer:
+    answer: str
+    provider: str = "fake"
+    model: str = "fake-model"
+
+
+class FakeReportChatbot:
+    def ask(self, result, question, *, history=(), language="tr") -> FakeChatAnswer:
+        assert result.file_name == "chat.docx"
+        assert question == "Bu skor neden düşük?"
+        assert language == "tr"
+        assert history[0].content == "Önceki soru"
+        return FakeChatAnswer("Rapor yalnızca düşük riskli statik göstergeler içeriyor.")
 
 
 def build_docx(path: Path) -> None:
@@ -201,6 +218,55 @@ class MODAUIServerTests(unittest.TestCase):
             thread.join(timeout=5)
 
         self.assertTrue(body.startswith(b"%PDF-1.4"))
+
+    def test_chat_endpoint_uses_cached_structured_analysis(self) -> None:
+        server = ThreadingHTTPServer(("127.0.0.1", 0), MODAUIHandler)
+        server.skip_yara = False
+        server.max_size_mb = 100
+        server.verbose = False
+        self._configure_cache(server)
+        server.chatbot = FakeReportChatbot()
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+
+        try:
+            with tempfile.TemporaryDirectory() as temp_dir:
+                sample = Path(temp_dir) / "chat.docx"
+                build_docx(sample)
+                analyze_request = urllib.request.Request(
+                    f"http://127.0.0.1:{server.server_port}/api/analyze?yara=0",
+                    data=sample.read_bytes(),
+                    method="POST",
+                    headers={"X-Filename": "chat.docx"},
+                )
+                with urllib.request.urlopen(analyze_request, timeout=5) as response:
+                    analysis = json.loads(response.read().decode("utf-8"))
+
+                chat_body = json.dumps(
+                    {
+                        "analysis_id": analysis["extra"]["analysis_id"],
+                        "question": "Bu skor neden düşük?",
+                        "language": "tr",
+                        "history": [{"role": "user", "content": "Önceki soru"}],
+                    }
+                ).encode("utf-8")
+                chat_request = urllib.request.Request(
+                    f"http://127.0.0.1:{server.server_port}/api/chat",
+                    data=chat_body,
+                    method="POST",
+                    headers={"Content-Type": "application/json"},
+                )
+                with urllib.request.urlopen(chat_request, timeout=5) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+
+        self.assertEqual(
+            payload["answer"], "Rapor yalnızca düşük riskli statik göstergeler içeriyor."
+        )
+        self.assertEqual(payload["provider"], "fake")
 
 
 if __name__ == "__main__":

@@ -5,6 +5,11 @@ const state = {
   health: "checking",
   isAnalyzing: false,
   isPreparingPdf: false,
+  isChatting: false,
+  chatConfigured: false,
+  chatProvider: null,
+  chatModel: null,
+  chatMessages: [],
   accessToken: new URLSearchParams(window.location.search).get("token") || "",
 };
 
@@ -69,6 +74,21 @@ const translations = {
     jsonCopied: "JSON copied",
     reportFailed: "Report failed",
     analysisFailed: "Analysis failed",
+    reportAssistant: "Report assistant",
+    askAboutAnalysis: "Ask about this analysis",
+    apiKeyRequired: "API key required",
+    chatbotReady: "ready",
+    chatAwaitingAnalysis: "Analyze a document to ask evidence-based questions.",
+    chatNeedsKey: "Configure an API key on the server to enable the report assistant.",
+    chatReadyMessage: "I can explain this report's score, findings, evidence, IOCs, YARA matches, and analysis limitations.",
+    chatPlaceholder: "Ask about findings, evidence, IOCs, or remediation…",
+    ask: "Ask",
+    thinking: "Reviewing evidence…",
+    chatFailed: "The report assistant could not answer",
+    chatPrivacy: "The structured report context—not the uploaded file—is sent to the configured provider.",
+    questionWhy: "Why did this file receive this risk score?",
+    questionPriority: "Which finding should I investigate first?",
+    questionErrors: "Did any analysis errors limit this result?",
     complete: "complete",
     partial: "partial analysis",
     inconclusive: "inconclusive",
@@ -146,6 +166,21 @@ const translations = {
     jsonCopied: "JSON kopyalandı",
     reportFailed: "Rapor oluşturulamadı",
     analysisFailed: "Analiz başarısız",
+    reportAssistant: "Rapor asistanı",
+    askAboutAnalysis: "Bu analiz hakkında soru sor",
+    apiKeyRequired: "API anahtarı gerekli",
+    chatbotReady: "hazır",
+    chatAwaitingAnalysis: "Kanıta dayalı sorular sormak için bir dokümanı analiz et.",
+    chatNeedsKey: "Rapor asistanını etkinleştirmek için sunucuda API anahtarını yapılandır.",
+    chatReadyMessage: "Bu raporun skorunu, bulgularını, kanıtlarını, IOC'lerini, YARA eşleşmelerini ve analiz sınırlamalarını açıklayabilirim.",
+    chatPlaceholder: "Bulgu, kanıt, IOC veya iyileştirme hakkında sor…",
+    ask: "Sor",
+    thinking: "Kanıtlar inceleniyor…",
+    chatFailed: "Rapor asistanı cevap veremedi",
+    chatPrivacy: "Yapılandırılmış rapor bağlamı sağlayıcıya gönderilir; yüklenen dosyanın kendisi gönderilmez.",
+    questionWhy: "Bu dosya neden bu risk skorunu aldı?",
+    questionPriority: "Önce hangi bulguyu araştırmalıyım?",
+    questionErrors: "Analiz hataları bu sonucu sınırlandırdı mı?",
     complete: "tamamlandı",
     partial: "kısmi analiz",
     inconclusive: "sonuçlandırılamadı",
@@ -195,6 +230,15 @@ const el = {
   jsonOutput: document.querySelector("#jsonOutput"),
   copyJsonBtn: document.querySelector("#copyJsonBtn"),
   downloadJsonBtn: document.querySelector("#downloadJsonBtn"),
+  chatEyebrow: document.querySelector("#chatEyebrow"),
+  chatTitle: document.querySelector("#chatTitle"),
+  chatStatus: document.querySelector("#chatStatus"),
+  chatMessages: document.querySelector("#chatMessages"),
+  chatSuggestions: document.querySelector("#chatSuggestions"),
+  chatForm: document.querySelector("#chatForm"),
+  chatInput: document.querySelector("#chatInput"),
+  chatSendBtn: document.querySelector("#chatSendBtn"),
+  chatPrivacy: document.querySelector("#chatPrivacy"),
   langButtons: document.querySelectorAll(".lang-btn"),
 };
 
@@ -246,6 +290,14 @@ function applyTranslations() {
   metricLabels[3].textContent = t("yara");
   el.copyJsonBtn.textContent = t("copyJson");
   el.downloadJsonBtn.textContent = t("download");
+  el.chatEyebrow.textContent = t("reportAssistant");
+  el.chatTitle.textContent = t("askAboutAnalysis");
+  el.chatInput.placeholder = t("chatPlaceholder");
+  el.chatPrivacy.textContent = t("chatPrivacy");
+  const suggestionKeys = ["questionWhy", "questionPriority", "questionErrors"];
+  el.chatSuggestions.querySelectorAll("button").forEach((button, index) => {
+    button.textContent = t(suggestionKeys[index]);
+  });
   document.querySelectorAll(".tab").forEach((button) => {
     const key = button.dataset.tab;
     button.textContent = key === "iocs" ? t("iocs") : t(key);
@@ -258,6 +310,7 @@ function applyTranslations() {
   renderHealth();
   setFile(state.file);
   renderResult(state.result);
+  renderChat();
 }
 
 function formatBytes(bytes) {
@@ -347,13 +400,19 @@ async function checkHealth() {
   try {
     const response = await fetch("/api/health");
     if (!response.ok) throw new Error("offline");
+    const payload = await response.json();
     state.health = "ready";
+    state.chatConfigured = Boolean(payload.chatbot?.configured);
+    state.chatProvider = payload.chatbot?.provider || null;
+    state.chatModel = payload.chatbot?.model || null;
     el.healthDot.classList.add("ok");
   } catch {
     state.health = "offline";
+    state.chatConfigured = false;
     el.healthDot.classList.remove("ok");
   }
   renderHealth();
+  renderChat();
 }
 
 function setFile(file) {
@@ -375,7 +434,15 @@ function reset() {
   state.result = null;
   el.fileInput.value = "";
   setFile(null);
+  resetChat();
   renderResult(null);
+}
+
+function resetChat() {
+  state.chatMessages = [];
+  state.isChatting = false;
+  el.chatInput.value = "";
+  renderChat();
 }
 
 async function analyze() {
@@ -400,6 +467,7 @@ async function analyze() {
       throw new Error(payload.error || t("analysisFailed"));
     }
     state.result = payload;
+    resetChat();
     renderResult(payload);
   } catch (error) {
     toast(error.message);
@@ -439,6 +507,7 @@ function renderResult(result) {
     el.metadataList.className = "empty-state";
     el.metadataList.textContent = t("noMetadataLoaded");
     el.jsonOutput.textContent = "{}";
+    renderChat();
     return;
   }
 
@@ -478,6 +547,96 @@ function renderResult(result) {
   renderIocs(result.iocs || []);
   renderMetadata(result.metadata || {});
   el.jsonOutput.textContent = JSON.stringify(result, null, 2);
+  renderChat();
+}
+
+function renderChat() {
+  const hasAnalysis = Boolean(state.result?.extra?.analysis_id);
+  const canChat = hasAnalysis && state.chatConfigured && !state.isChatting;
+  el.chatInput.disabled = !canChat;
+  el.chatSendBtn.disabled = !canChat;
+  el.chatSendBtn.textContent = state.isChatting ? t("thinking") : t("ask");
+  el.chatSuggestions.querySelectorAll("button").forEach((button) => {
+    button.disabled = !canChat;
+  });
+
+  if (state.chatConfigured) {
+    const provider = state.chatProvider || "LLM";
+    const model = state.chatModel ? ` · ${state.chatModel}` : "";
+    el.chatStatus.textContent = `${provider}${model} · ${t("chatbotReady")}`;
+    el.chatStatus.classList.add("is-ready");
+  } else {
+    el.chatStatus.textContent = t("apiKeyRequired");
+    el.chatStatus.classList.remove("is-ready");
+  }
+
+  el.chatMessages.replaceChildren();
+  if (!hasAnalysis) {
+    appendChatEmpty(t("chatAwaitingAnalysis"));
+    return;
+  }
+  if (!state.chatConfigured) {
+    appendChatEmpty(t("chatNeedsKey"));
+    return;
+  }
+  if (!state.chatMessages.length) {
+    appendChatEmpty(t("chatReadyMessage"));
+    return;
+  }
+  state.chatMessages.forEach((message) => {
+    const article = document.createElement("article");
+    article.className = `chat-message ${message.role}`;
+    const label = document.createElement("strong");
+    label.textContent = message.role === "user" ? (state.lang === "tr" ? "Sen" : "You") : "MODA AI";
+    const content = document.createElement("p");
+    content.textContent = message.content;
+    article.append(label, content);
+    el.chatMessages.appendChild(article);
+  });
+  el.chatMessages.scrollTop = el.chatMessages.scrollHeight;
+}
+
+function appendChatEmpty(message) {
+  const node = document.createElement("div");
+  node.className = "chat-empty";
+  node.textContent = message;
+  el.chatMessages.appendChild(node);
+}
+
+async function askChat(question) {
+  const cleanQuestion = String(question || "").trim();
+  const analysisId = state.result?.extra?.analysis_id;
+  if (!cleanQuestion || !analysisId || state.isChatting || !state.chatConfigured) return;
+
+  const history = state.chatMessages.slice(-8).map(({ role, content }) => ({ role, content }));
+  state.chatMessages.push({ role: "user", content: cleanQuestion });
+  state.isChatting = true;
+  el.chatInput.value = "";
+  renderChat();
+
+  try {
+    const response = await fetch("/api/chat", {
+      method: "POST",
+      headers: apiHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({
+        analysis_id: analysisId,
+        question: cleanQuestion,
+        language: state.lang,
+        history,
+      }),
+    });
+    const payload = await response.json();
+    if (!response.ok || payload.error) {
+      throw new Error(payload.error || t("chatFailed"));
+    }
+    state.chatMessages.push({ role: "assistant", content: payload.answer });
+  } catch (error) {
+    toast(error.message || t("chatFailed"));
+  } finally {
+    state.isChatting = false;
+    renderChat();
+    el.chatInput.focus();
+  }
 }
 
 function factMarkup(items) {
@@ -1031,6 +1190,23 @@ el.downloadJsonBtn.addEventListener("click", () => {
   link.download = `${state.result?.file_info?.file_name || "moda"}-analysis.json`;
   link.click();
   URL.revokeObjectURL(link.href);
+});
+
+el.chatForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  askChat(el.chatInput.value);
+});
+
+el.chatInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && !event.shiftKey) {
+    event.preventDefault();
+    askChat(el.chatInput.value);
+  }
+});
+
+el.chatSuggestions.querySelectorAll("button").forEach((button, index) => {
+  const keys = ["questionWhy", "questionPriority", "questionErrors"];
+  button.addEventListener("click", () => askChat(t(keys[index])));
 });
 
 applyTranslations();

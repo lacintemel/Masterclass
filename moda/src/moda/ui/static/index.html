@@ -152,6 +152,37 @@
               <pre id="jsonOutput">{}</pre>
             </div>
           </section>
+
+          <section class="chat-panel" aria-labelledby="chatTitle">
+            <div class="chat-header">
+              <div>
+                <span class="eyebrow" id="chatEyebrow">Report assistant</span>
+                <h3 id="chatTitle">Ask about this analysis</h3>
+              </div>
+              <span id="chatStatus" class="chat-status">API key required</span>
+            </div>
+            <div id="chatMessages" class="chat-messages" aria-live="polite">
+              <div class="chat-empty">Analyze a document to ask evidence-based questions.</div>
+            </div>
+            <div id="chatSuggestions" class="chat-suggestions">
+              <button type="button" data-question="why">Why did this file receive this risk score?</button>
+              <button type="button" data-question="priority">Which finding should I investigate first?</button>
+              <button type="button" data-question="errors">Did any analysis errors limit this result?</button>
+            </div>
+            <form id="chatForm" class="chat-form">
+              <textarea
+                id="chatInput"
+                rows="2"
+                maxlength="2000"
+                placeholder="Ask about findings, evidence, IOCs, or remediation…"
+                disabled
+              ></textarea>
+              <button id="chatSendBtn" class="primary-btn" type="submit" disabled>Ask</button>
+            </form>
+            <small id="chatPrivacy" class="chat-privacy">
+              The structured report context—not the uploaded file—is sent to the configured provider.
+            </small>
+          </section>
         </section>
       </section>
     </main>
