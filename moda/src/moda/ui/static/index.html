@@ -3,16 +3,19 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>MODA</title>
+    <meta name="theme-color" content="#0b0e14" />
+    <meta
+      name="description"
+      content="MODA document threat analysis workspace"
+    />
+    <title>MODA · Document Threat Analysis</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
     <main class="app-shell">
       <header class="topbar">
         <div class="brand-lockup">
-          <div class="mark" aria-hidden="true">
-            <span></span>
-          </div>
+          <div class="mark" aria-hidden="true"><span>M</span></div>
           <div>
             <h1>MODA</h1>
             <p>Document threat analysis</p>
@@ -34,7 +37,7 @@
         <aside class="intake-panel">
           <div class="panel-title">
             <span>Intake</span>
-            <button id="resetBtn" class="icon-btn" type="button" title="Reset">
+            <button id="resetBtn" class="icon-btn" type="button" title="Reset" aria-label="Reset">
               <span aria-hidden="true">↺</span>
             </button>
           </div>
@@ -119,32 +122,32 @@
             <div class="empty-state compact">No score contributors</div>
           </section>
 
-          <nav class="tabs" aria-label="Result sections">
-            <button class="tab is-active" type="button" data-tab="findings">Findings</button>
-            <button class="tab" type="button" data-tab="response">Response</button>
-            <button class="tab" type="button" data-tab="yara">YARA</button>
-            <button class="tab" type="button" data-tab="iocs">IOCs</button>
-            <button class="tab" type="button" data-tab="metadata">Metadata</button>
-            <button class="tab" type="button" data-tab="json">JSON</button>
+          <nav class="tabs" aria-label="Result sections" role="tablist">
+            <button class="tab is-active" id="findingsTab" type="button" role="tab" aria-controls="findings" aria-selected="true" data-tab="findings">Findings</button>
+            <button class="tab" id="responseTab" type="button" role="tab" aria-controls="response" aria-selected="false" data-tab="response">Response</button>
+            <button class="tab" id="yaraTab" type="button" role="tab" aria-controls="yara" aria-selected="false" data-tab="yara">YARA</button>
+            <button class="tab" id="iocsTab" type="button" role="tab" aria-controls="iocs" aria-selected="false" data-tab="iocs">IOCs</button>
+            <button class="tab" id="metadataTab" type="button" role="tab" aria-controls="metadata" aria-selected="false" data-tab="metadata">Metadata</button>
+            <button class="tab" id="jsonTab" type="button" role="tab" aria-controls="json" aria-selected="false" data-tab="json">JSON</button>
           </nav>
 
           <section class="tab-stage">
-            <div id="findings" class="tab-panel is-active">
+            <div id="findings" class="tab-panel is-active" role="tabpanel" aria-labelledby="findingsTab">
               <div id="findingsList" class="empty-state">No analysis loaded</div>
             </div>
-            <div id="response" class="tab-panel">
+            <div id="response" class="tab-panel" role="tabpanel" aria-labelledby="responseTab" hidden>
               <div id="responseList" class="empty-state">No response guidance loaded</div>
             </div>
-            <div id="yara" class="tab-panel">
+            <div id="yara" class="tab-panel" role="tabpanel" aria-labelledby="yaraTab" hidden>
               <div id="yaraList" class="empty-state">No YARA matches loaded</div>
             </div>
-            <div id="iocs" class="tab-panel">
+            <div id="iocs" class="tab-panel" role="tabpanel" aria-labelledby="iocsTab" hidden>
               <div id="iocList" class="empty-state">No indicators loaded</div>
             </div>
-            <div id="metadata" class="tab-panel">
+            <div id="metadata" class="tab-panel" role="tabpanel" aria-labelledby="metadataTab" hidden>
               <div id="metadataList" class="empty-state">No metadata loaded</div>
             </div>
-            <div id="json" class="tab-panel">
+            <div id="json" class="tab-panel" role="tabpanel" aria-labelledby="jsonTab" hidden>
               <div class="json-toolbar">
                 <button id="copyJsonBtn" class="secondary-btn" type="button">Copy JSON</button>
                 <button id="downloadJsonBtn" class="secondary-btn" type="button">Download</button>

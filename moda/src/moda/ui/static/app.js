@@ -243,10 +243,10 @@ const el = {
 };
 
 const riskColors = {
-  low: "#6fcf97",
-  medium: "#d6b46a",
-  high: "#bd6b44",
-  critical: "#e05a47",
+  low: "#42c98b",
+  medium: "#f0b44d",
+  high: "#f07848",
+  critical: "#ef5b67",
 };
 
 function t(key) {
@@ -281,6 +281,7 @@ function applyTranslations() {
   document.querySelector(".brand-lockup p").textContent = t("brandSubtitle");
   document.querySelector(".panel-title span").textContent = t("intake");
   el.resetBtn.title = t("reset");
+  el.resetBtn.setAttribute("aria-label", t("reset"));
   document.querySelector(".switch-row span").textContent = t("yaraScan");
   document.querySelector(".eyebrow").textContent = t("analysis");
   const metricLabels = document.querySelectorAll(".metric-row span");
@@ -349,7 +350,7 @@ function drawRisk(score = 0, level = "low", components = []) {
   ctx.beginPath();
   ctx.arc(center, center, radius, 0, Math.PI * 2);
   ctx.lineWidth = 13;
-  ctx.strokeStyle = "rgba(244, 239, 228, 0.12)";
+  ctx.strokeStyle = "rgba(185, 201, 224, 0.1)";
   ctx.stroke();
 
   const visibleComponents = components.filter((item) => Number(item.percentage || 0) > 0);
@@ -382,7 +383,7 @@ function drawRisk(score = 0, level = "low", components = []) {
     ctx.beginPath();
     ctx.moveTo(center + Math.cos(angle) * inner, center + Math.sin(angle) * inner);
     ctx.lineTo(center + Math.cos(angle) * outer, center + Math.sin(angle) * outer);
-    ctx.strokeStyle = i % 5 === 0 ? "rgba(214, 180, 106, 0.58)" : "rgba(244, 239, 228, 0.16)";
+    ctx.strokeStyle = i % 5 === 0 ? "rgba(119, 160, 255, 0.42)" : "rgba(185, 201, 224, 0.12)";
     ctx.lineWidth = 1;
     ctx.stroke();
   }
@@ -406,10 +407,12 @@ async function checkHealth() {
     state.chatProvider = payload.chatbot?.provider || null;
     state.chatModel = payload.chatbot?.model || null;
     el.healthDot.classList.add("ok");
+    el.healthDot.classList.remove("offline");
   } catch {
     state.health = "offline";
     state.chatConfigured = false;
     el.healthDot.classList.remove("ok");
+    el.healthDot.classList.add("offline");
   }
   renderHealth();
   renderChat();
@@ -417,7 +420,9 @@ async function checkHealth() {
 
 function setFile(file) {
   state.file = file;
+  el.dropzone.classList.toggle("has-file", Boolean(file));
   el.analyzeBtn.disabled = !file || state.isAnalyzing;
+  el.analyzeBtn.setAttribute("aria-busy", String(state.isAnalyzing));
   el.analyzeBtn.innerHTML = buttonMarkup(state.isAnalyzing ? t("analyzing") : t("analyze"), "◆");
   el.dropTitle.textContent = file ? file.name : t("dropDocument");
   el.dropMeta.textContent = file ? formatBytes(file.size) : t("acceptedTypes");
@@ -449,6 +454,7 @@ async function analyze() {
   if (!state.file) return;
   state.isAnalyzing = true;
   el.analyzeBtn.disabled = true;
+  el.analyzeBtn.setAttribute("aria-busy", "true");
   el.analyzeBtn.textContent = t("analyzing");
 
   try {
@@ -657,7 +663,7 @@ function renderRiskBreakdown(breakdown) {
       const percentage = Number(component.percentage || 0);
       const reasons = Array.isArray(component.reasons) ? component.reasons.slice(0, 5) : [];
       return `
-        <article class="risk-component" style="--component-color: ${escapeHtml(component.color || "#6fcf97")}">
+        <article class="risk-component" style="--component-color: ${escapeHtml(component.color || "#42c98b")}">
           <div class="risk-component-head">
             <span class="component-swatch" aria-hidden="true"></span>
             <strong>${escapeHtml(component.label || component.key || "Risk")}</strong>
@@ -1099,14 +1105,40 @@ function renderMetadata(metadata) {
     .join("");
 }
 
-document.querySelectorAll(".tab").forEach((button) => {
+const tabs = [...document.querySelectorAll(".tab")];
+
+function activateTab(button) {
+  tabs.forEach((tab) => {
+    const isActive = tab === button;
+    tab.classList.toggle("is-active", isActive);
+    tab.setAttribute("aria-selected", String(isActive));
+    tab.tabIndex = isActive ? 0 : -1;
+  });
+  document.querySelectorAll(".tab-panel").forEach((panel) => {
+    const isActive = panel.id === button.dataset.tab;
+    panel.classList.toggle("is-active", isActive);
+    panel.hidden = !isActive;
+  });
+}
+
+tabs.forEach((button, index) => {
   button.addEventListener("click", () => {
-    document.querySelectorAll(".tab").forEach((tab) => tab.classList.remove("is-active"));
-    document.querySelectorAll(".tab-panel").forEach((panel) => panel.classList.remove("is-active"));
-    button.classList.add("is-active");
-    document.querySelector(`#${button.dataset.tab}`).classList.add("is-active");
+    activateTab(button);
+  });
+  button.addEventListener("keydown", (event) => {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    let nextIndex = index;
+    if (event.key === "ArrowRight") nextIndex = (index + 1) % tabs.length;
+    if (event.key === "ArrowLeft") nextIndex = (index - 1 + tabs.length) % tabs.length;
+    if (event.key === "Home") nextIndex = 0;
+    if (event.key === "End") nextIndex = tabs.length - 1;
+    activateTab(tabs[nextIndex]);
+    tabs[nextIndex].focus();
   });
 });
+
+activateTab(tabs.find((tab) => tab.classList.contains("is-active")) || tabs[0]);
 
 el.langButtons.forEach((button) => {
   button.addEventListener("click", () => {
